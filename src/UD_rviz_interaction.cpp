@@ -5,6 +5,10 @@
 
 #include <ros/ros.h>
 #include <visualization_msgs/Marker.h>
+#include <pcl/ros/conversions.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <sensor_msgs/PointCloud2.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/PointStamped.h>
 #include <boost/bind.hpp>
@@ -13,10 +17,16 @@
 #include <math.h>
 
 using namespace std;
+
+//changing modes
+int workmode =0; //1 polyline mode 2 box selection
+
+
 //Defining ROS parameters
 ros::Publisher marker_pub;
 ros::NodeHandle *nhp;
 ros::Subscriber click_sub;
+ros::Subscriber ptcloud_sub;
 
 float cpdist=0; //Current frame
 float globalscale =0.05;
@@ -36,6 +46,9 @@ float calc_cp_dist(int i, vector<vector<float> > polypoints)
   float cp_dist= sqrt((polypoints[0][i]-polypoints[0][i-1])*(polypoints[0][i]-polypoints[0][i-1])+(polypoints[1][i]-polypoints[1][i-1])*(polypoints[1][i]-polypoints[1][i-1])+(polypoints[2][i]-polypoints[2][i-1])*(polypoints[2][i]-polypoints[2][i-1]));
   return cp_dist;
 }
+
+void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr&);
+
 
 void clickCallback(const geometry_msgs::PointStamped& msg)
 {
@@ -232,8 +245,15 @@ cp.z=pp.z=0;
 
    nhp= new ros::NodeHandle();
 
+  //Publishers
   marker_pub = nhp->advertise<visualization_msgs::Marker>("visualization_marker", 10);
-   click_sub = nhp->subscribe("clicked_point", 10,clickCallback);
+
+  //Subscribers
+  click_sub = nhp->subscribe("clicked_point", 10,clickCallback);
+
+
+  ptcloud_sub = nhp->subscribe("cloud_pcd", 10,ptcloudCallback);
+
 
   ros::Rate UD_rviz_interaction_rate(30);
 
@@ -243,6 +263,5 @@ cp.z=pp.z=0;
     ros::spinOnce();
   }
 }
-
 
 
