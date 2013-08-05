@@ -88,7 +88,7 @@ sensor_msgs::PointCloud2::Ptr pcd2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
 
 // Load input file into a PointCloud<T> with an appropriate type
 pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
-sensor_msgs::PointCloud2 cloud_blob;
+  sensor_msgs::PointCloud2 cloud_blob;
 
   sensor_msgs::PointCloud2::Ptr input (new sensor_msgs::PointCloud2 ());
   sensor_msgs::PointCloud2::Ptr output (new sensor_msgs::PointCloud2 ());
@@ -96,9 +96,11 @@ sensor_msgs::PointCloud2 cloud_blob;
 
   input= rawpt;
 
- pcl::PCDReader reader;
-  // Replace the path below with the path where you saved your file
-  reader.read ("./armory_stairs1_hokuyo.pcd", *input); // Remember to download the file first!
+ //For testing
+
+ // pcl::PCDReader reader;
+ 
+ // reader.read ("./armory_stairs1_hokuyo.pcd", *input);
 
 
   pcl::VoxelGrid<sensor_msgs::PointCloud2> sor;
@@ -106,15 +108,16 @@ sensor_msgs::PointCloud2 cloud_blob;
   sor.setLeafSize (0.1, 0.1, 0.1);
   sor.filter (*output);
 
-
-pcl::PCDWriter writer;
-  writer.write ("./downsampled.pcd", *output, 
-         Eigen::Vector4f::Zero (), Eigen::Quaternionf::Identity (), false);
+ //For testing
+// pcl::PCDWriter writer;
+// writer.write ("./downsampled.pcd", *output, 
+//       Eigen::Vector4f::Zero (), Eigen::Quaternionf::Identity (), false);
 
 printf("Downsampling completed!\n");
 
+cloud_blob=*output;
 
-pcl::io::loadPCDFile ("./downsampled.pcd", cloud_blob);
+// pcl::io::loadPCDFile ("./downsampled.pcd", cloud_blob);
 pcl::fromROSMsg (cloud_blob, *cloud);
 //* the data should be available in cloud
 
@@ -162,6 +165,7 @@ gp3.reconstruct (triangles);
 std::vector<int> parts = gp3.getPartIDs();
 std::vector<int> states = gp3.getPointStates();
 
+//For testing
 pcl::io::saveVTKFile("mesh.vtk",triangles); 
 
 return output;
