@@ -141,6 +141,7 @@ cloud_blob=*output;
 
 ///////////////////Moving Least Squares smooth on downsampled pointcloud///////////////////////////////////
 
+
   pcl::io::loadPCDFile ("./downsampled.pcd", *cloud);
   // Create a KD-Tree
   pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
@@ -167,6 +168,7 @@ cloud_blob=*output;
 
 
 ///////////////////Mesh reconstruction by fast triangulation///////////////////////////////////
+
 
 //Comment this line to disable smooth
 pcl::io::loadPCDFile ("./smoothed.pcd", cloud_blob);
@@ -229,7 +231,6 @@ return output;
 //Also need a panel to tell the function when to stop
 void click_segplane()
 {
-
 
 
 // clicked_plane plane estimation:
@@ -318,8 +319,8 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
     line_list.color.b = 1.0;
     line_list.color.a = 1.0;
 
-     line_strip.color.b = 1.0;
-     line_strip.color.a = 1.0;
+    line_strip.color.b = 1.0;
+    line_strip.color.a = 1.0;
 
     // Sphere is green
     psphere.color.r = 1.0;
@@ -341,18 +342,15 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
     cp.y=fp.y;
     cp.z=fp.z;
 
-      psphere.points.push_back(pp);
-      psphere.pose.position.x = pp.x;
-      psphere.pose.position.y = pp.y;
-      psphere.pose.position.z = pp.z;
+    psphere.points.push_back(pp);
+    psphere.pose.position.x = pp.x;
+    psphere.pose.position.y = pp.y;
+    psphere.pose.position.z = pp.z;
 
-      csphere.points.push_back(cp);
-      csphere.pose.position.x = cp.x;
-      csphere.pose.position.y = cp.y;
-      csphere.pose.position.z = cp.z;
-
-
-
+    csphere.points.push_back(cp);
+    csphere.pose.position.x = cp.x;
+    csphere.pose.position.y = cp.y;
+    csphere.pose.position.z = cp.z;
 
 
      // Create the vertices for the points and lines
