@@ -83,6 +83,9 @@ void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 */
 }
 
+
+//This function returns downsampled pointcloud and convert it to pcl::PolygonMesh, needs another panel to define
+//saving path for the mesh file, and mesh reconstruction parameters.
 sensor_msgs::PointCloud2::Ptr pcd2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
 {
 
