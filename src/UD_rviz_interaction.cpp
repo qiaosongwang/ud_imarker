@@ -99,6 +99,11 @@ void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 sensor_msgs::PointCloud2::Ptr pt2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
 {
 
+
+
+
+///////////////////Voxel filter///////////////////////////////////
+
 // Load input file into a PointCloud<T> with an appropriate type
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
 
@@ -131,7 +136,7 @@ printf("Downsampling completed!\n");
 
 cloud_blob=*output;
 
-
+///////////////////Smooth on downsampled pointcloud///////////////////////////////////
 
   pcl::io::loadPCDFile ("./downsampled.pcd", *cloud);
   // Create a KD-Tree
@@ -158,7 +163,7 @@ cloud_blob=*output;
   pcl::io::savePCDFile ("./smoothed.pcd", mls_points);
 
 
-
+///////////////////Mesh reconstruction by fast triangulation///////////////////////////////////
 
 //Comment this line to disable smooth
 pcl::io::loadPCDFile ("./smoothed.pcd", cloud_blob);
