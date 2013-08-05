@@ -22,6 +22,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/sample_consensus/method_types.h>
 #include <pcl/sample_consensus/model_types.h>
+#include <pcl/sample_consensus/sac_model_plane.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/ModelCoefficients.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -34,6 +35,10 @@
 #include <cmath>
 #include <vector>
 #include <math.h>
+
+typedef pcl::PointXYZRGBA PointT;
+typedef pcl::PointCloud<PointT> PointCloudT;
+
 
 using namespace std;
 
@@ -73,22 +78,22 @@ void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 {
 
 /*
- pcl::fromROSMsg(*input, rviz_pt);
- sensor_msgs::PointCloud2 cloud_filtered;
+pcl::fromROSMsg(*input, rviz_pt);
+sensor_msgs::PointCloud2 cloud_filtered;
 
 // Perform the actual filtering
-   pcl::VoxelGrid<pcl::PointXYZRGB> sor ;
-   sor.setInputCloud (rviz_pt);
-   sor.setLeafSize (0.01, 0.01, 0.01);
-   sor.filter (rviz_pt_filtered);
+pcl::VoxelGrid<pcl::PointXYZRGB> sor ;
+sor.setInputCloud (rviz_pt);
+sor.setLeafSize (0.01, 0.01, 0.01);
+sor.filter (rviz_pt_filtered);
 
-  //Convert the pcl cloud back to rosmsg
-  pcl::toROSMsg(*rviz_pt_filtered, cloud_filtered);
-  //Set the header of the cloud
-  cloud_filtered.header.frame_id = input->header.frame_id;
-  // Publish the data
-  //You may have to set the header frame id of the cloud_filtered also
-  pub.publish (cloud_filtered);
+//Convert the pcl cloud back to rosmsg
+pcl::toROSMsg(*rviz_pt_filtered, cloud_filtered);
+//Set the header of the cloud
+cloud_filtered.header.frame_id = input->header.frame_id;
+// Publish the data
+//You may have to set the header frame id of the cloud_filtered also
+pub.publish (cloud_filtered);
 
 */
 }
@@ -96,7 +101,7 @@ void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 
 //This function returns downsampled pointcloud and convert it to pcl::PolygonMesh, needs another panel to define
 //saving path for the mesh file, and mesh reconstruction parameters.
-sensor_msgs::PointCloud2::Ptr pt2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
+sensor_msgs::PointCloud2::Ptr click_pt2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
 {
 
 
@@ -129,7 +134,7 @@ sensor_msgs::PointCloud2::Ptr pt2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
 
  //For testing
  pcl::PCDWriter writer;
- writer.write ("./downsampled.pcd", *output, 
+ writer.write ("./downsampled.pcd", *output,
        Eigen::Vector4f::Zero (), Eigen::Quaternionf::Identity (), false);
 
 printf("Downsampling completed!\n");
@@ -216,11 +221,31 @@ std::vector<int> parts = gp3.getPartIDs();
 std::vector<int> states = gp3.getPointStates();
 
 //For testing
-pcl::io::saveVTKFile("mesh.vtk",triangles); 
+pcl::io::saveVTKFile("mesh.vtk",triangles);
 
 return output;
 }
 
+
+//Plane fitting on user clicked 3D point coordinates, works directly on the global vector array: polypoints
+//Also need a panel to tell the function when to stop
+void click_segplane()
+{
+
+//Pass the value of polypoints to clicked_points_3d
+
+// clicked_plane plane estimation:
+  PointCloudT::Ptr clicked_points_3d (new PointCloudT);
+  Eigen::VectorXf clicked_plane_coeffs;
+  clicked_plane_coeffs.resize(4);
+  std::vector<int> clicked_points_indices;
+  for (unsigned int i = 0; i < clicked_points_3d->points.size(); i++)
+    clicked_points_indices.push_back(i);
+  pcl::SampleConsensusModelPlane<PointT> model_plane(clicked_points_3d);
+  model_plane.computeModelCoefficients(clicked_points_indices,clicked_plane_coeffs);
+  std::cout << "clicked_plane plane: " << clicked_plane_coeffs(0) << " " << clicked_plane_coeffs(1) << " " << clicked_plane_coeffs(2) << " " << clicked_plane_coeffs(3) << std::endl;
+
+}
 
 
 
@@ -229,14 +254,14 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
 
      //Getting ROS geometry msgs
     //ROS_INFO("New Point at X: %f, Y: %f, Z: %f\n", msg.point.x, msg.point.y, msg.point.z);
-    fp.x =  msg.point.x;
-    fp.y =  msg.point.y;
-    fp.z =  msg.point.z;
+    fp.x = msg.point.x;
+    fp.y = msg.point.y;
+    fp.z = msg.point.z;
 
 
     // Initialize marker parameters
-    visualization_msgs::Marker points, line_strip, line_list , psphere, csphere, arrow, showtext,showtextid; 
-    showtext.header.frame_id = arrow.header.frame_id=psphere.header.frame_id=csphere.header.frame_id = points.header.frame_id = line_strip.header.frame_id = line_list.header.frame_id = "/base_link";
+    visualization_msgs::Marker points, line_strip, line_list , psphere, csphere, arrow, showtext,showtextid;
+    showtext.header.frame_id = arrow.header.frame_id=psphere.header.frame_id=csphere.header.frame_id = points.header.frame_id =     line_strip.header.frame_id = line_list.header.frame_id = "/base_link";
     showtext.header.stamp = arrow.header.stamp=psphere.header.stamp =csphere.header.stamp= points.header.stamp = line_strip.header.stamp = line_list.header.stamp = ros::Time::now();
     showtext.ns = arrow.ns=psphere.ns=csphere.ns=points.ns = line_strip.ns = line_list.ns = "UD_rviz_interaction";
     showtext.action = arrow.action=psphere.action=csphere.action=points.action = line_strip.action = line_list.action = visualization_msgs::Marker::ADD;
@@ -343,12 +368,12 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
            geometry_msgs::Point p;
            p.x = polypoints[0][i];
            p.y = polypoints[1][i];
-	   p.z = polypoints[2][i];
+p.z = polypoints[2][i];
            /*
-           printf("%f\n", polypoints[0][i]);
-           printf("%f\n", polypoints[1][i]);
-           printf("%f\n", polypoints[2][i]);
-           */
+printf("%f\n", polypoints[0][i]);
+printf("%f\n", polypoints[1][i]);
+printf("%f\n", polypoints[2][i]);
+*/
            points.points.push_back(p);
            line_strip.points.push_back(p);
 
@@ -367,22 +392,22 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
           // p.z += 1.0;
            //line_list.points.push_back(p);
           if(i>0)
-          cpdist=cpdist+calc_cp_dist(i,polypoints); 
+          cpdist=cpdist+calc_cp_dist(i,polypoints);
         }
 
-       pp.x = cp.x;
-       pp.y = cp.y;
-       pp.z = cp.z; 
+     pp.x = cp.x;
+     pp.y = cp.y;
+     pp.z = cp.z;
 
-         printf("Distance: %f \n", cpdist);
+     printf("Distance: %f \n", cpdist);
 
-            std::stringstream show_dist;
-            show_dist<< cpdist << "\n";
+     std::stringstream show_dist;
+     show_dist<< cpdist << "\n";
 
-         showtext.text = show_dist.str();
-         showtext.pose.position.x = polypoints[0][polycount];
-         showtext.pose.position.y = polypoints[1][polycount];
-         showtext.pose.position.z = polypoints[2][polycount];
+     showtext.text = show_dist.str();
+     showtext.pose.position.x = polypoints[0][polycount];
+     showtext.pose.position.y = polypoints[1][polycount];
+     showtext.pose.position.z = polypoints[2][polycount];
 
 // Publish markers
     marker_pub.publish(line_list);
@@ -408,12 +433,12 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
 int main( int argc, char** argv )
 {
 
-fp.x=1;
-fp.y=1;
-fp.z=1;
-cp.x=pp.x=0;
-cp.y=pp.y=0;
-cp.z=pp.z=0;
+  fp.x=1;
+  fp.y=1;
+  fp.z=1;
+  cp.x=pp.x=0;
+  cp.y=pp.y=0;
+  cp.z=pp.z=0;
 
   ros::init(argc, argv, "UD_rviz_interaction");
 
@@ -437,5 +462,4 @@ cp.z=pp.z=0;
     ros::spinOnce();
   }
 }
-
 
