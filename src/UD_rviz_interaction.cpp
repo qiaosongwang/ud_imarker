@@ -105,8 +105,6 @@ sensor_msgs::PointCloud2::Ptr click_pt2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
 {
 
 
-
-
 ///////////////////Voxel filter///////////////////////////////////
 
 // Load input file into a PointCloud<T> with an appropriate type
@@ -141,7 +139,7 @@ printf("Downsampling completed!\n");
 
 cloud_blob=*output;
 
-///////////////////Smooth on downsampled pointcloud///////////////////////////////////
+///////////////////Moving Least Squares smooth on downsampled pointcloud///////////////////////////////////
 
   pcl::io::loadPCDFile ("./downsampled.pcd", *cloud);
   // Create a KD-Tree
@@ -232,7 +230,7 @@ return output;
 void click_segplane()
 {
 
-//Pass the value of polypoints to clicked_points_3d
+
 
 // clicked_plane plane estimation:
   PointCloudT::Ptr clicked_points_3d (new PointCloudT);
@@ -240,7 +238,9 @@ void click_segplane()
   clicked_plane_coeffs.resize(4);
   std::vector<int> clicked_points_indices;
   for (unsigned int i = 0; i < clicked_points_3d->points.size(); i++)
+//Pass the value of polypoints to clicked_points_3d
     clicked_points_indices.push_back(i);
+
   pcl::SampleConsensusModelPlane<PointT> model_plane(clicked_points_3d);
   model_plane.computeModelCoefficients(clicked_points_indices,clicked_plane_coeffs);
   std::cout << "clicked_plane plane: " << clicked_plane_coeffs(0) << " " << clicked_plane_coeffs(1) << " " << clicked_plane_coeffs(2) << " " << clicked_plane_coeffs(3) << std::endl;
