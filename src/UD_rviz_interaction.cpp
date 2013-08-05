@@ -5,9 +5,18 @@
 
 #include <ros/ros.h>
 #include <visualization_msgs/Marker.h>
+#include <boost/foreach.hpp>
+#include <pcl/io/pcd_io.h>
+#include <pcl/io/vtk_io.h>
 #include <pcl/ros/conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/point_types.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/surface/gp3.h>
+#include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/filters/voxel_grid.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/PointStamped.h>
@@ -29,25 +38,134 @@ ros::Subscriber click_sub;
 ros::Subscriber ptcloud_sub;
 
 float cpdist=0; //Current frame
-float globalscale =0.05;
+float globalscale =100;
 geometry_msgs::Point fp; //future point
 geometry_msgs::Point cp; //current point
 geometry_msgs::Point pp; //previous point
 
 //Number of points, need to be dynamically assiagned once the panel is done
-int num_polypoints=8;
+int num_polypoints=100;
 int polycount = 0;
 
 //Declare 3D point storage structure
 vector<vector<float> > polypoints(3, vector<float>(100));
 
+//Declare received pointcloud from RVIZ
+pcl::PointCloud< pcl::PointXYZRGB> rviz_pt;
+pcl::PointCloud< pcl::PointXYZRGB> rviz_pt_filtered;
 float calc_cp_dist(int i, vector<vector<float> > polypoints)
 {
   float cp_dist= sqrt((polypoints[0][i]-polypoints[0][i-1])*(polypoints[0][i]-polypoints[0][i-1])+(polypoints[1][i]-polypoints[1][i-1])*(polypoints[1][i]-polypoints[1][i-1])+(polypoints[2][i]-polypoints[2][i-1])*(polypoints[2][i]-polypoints[2][i-1]));
   return cp_dist;
 }
 
-void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr&);
+void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
+{
+
+/*
+ pcl::fromROSMsg(*input, rviz_pt);
+ sensor_msgs::PointCloud2 cloud_filtered;
+
+// Perform the actual filtering
+   pcl::VoxelGrid<pcl::PointXYZRGB> sor ;
+   sor.setInputCloud (rviz_pt);
+   sor.setLeafSize (0.01, 0.01, 0.01);
+   sor.filter (rviz_pt_filtered);
+
+  //Convert the pcl cloud back to rosmsg
+  pcl::toROSMsg(*rviz_pt_filtered, cloud_filtered);
+  //Set the header of the cloud
+  cloud_filtered.header.frame_id = input->header.frame_id;
+  // Publish the data
+  //You may have to set the header frame id of the cloud_filtered also
+  pub.publish (cloud_filtered);
+
+*/
+}
+
+sensor_msgs::PointCloud2::Ptr pcd2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
+{
+
+// Load input file into a PointCloud<T> with an appropriate type
+pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
+sensor_msgs::PointCloud2 cloud_blob;
+
+  sensor_msgs::PointCloud2::Ptr input (new sensor_msgs::PointCloud2 ());
+  sensor_msgs::PointCloud2::Ptr output (new sensor_msgs::PointCloud2 ());
+
+
+  input= rawpt;
+
+ pcl::PCDReader reader;
+  // Replace the path below with the path where you saved your file
+  reader.read ("./armory_stairs1_hokuyo.pcd", *input); // Remember to download the file first!
+
+
+  pcl::VoxelGrid<sensor_msgs::PointCloud2> sor;
+  sor.setInputCloud (input);
+  sor.setLeafSize (0.1, 0.1, 0.1);
+  sor.filter (*output);
+
+
+pcl::PCDWriter writer;
+  writer.write ("./downsampled.pcd", *output, 
+         Eigen::Vector4f::Zero (), Eigen::Quaternionf::Identity (), false);
+
+printf("Downsampling completed!\n");
+
+
+pcl::io::loadPCDFile ("./downsampled.pcd", cloud_blob);
+pcl::fromROSMsg (cloud_blob, *cloud);
+//* the data should be available in cloud
+
+// Normal estimation*
+pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> n;
+pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
+pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+tree->setInputCloud (cloud);
+n.setInputCloud (cloud);
+n.setSearchMethod (tree);
+n.setKSearch (20);
+n.compute (*normals);
+//* normals should not contain the point normals + surface curvatures
+
+// Concatenate the XYZ and normal fields*
+pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals (new pcl::PointCloud<pcl::PointNormal>);
+pcl::concatenateFields (*cloud, *normals, *cloud_with_normals);
+//* cloud_with_normals = cloud + normals
+
+// Create search tree*
+pcl::search::KdTree<pcl::PointNormal>::Ptr tree2 (new pcl::search::KdTree<pcl::PointNormal>);
+tree2->setInputCloud (cloud_with_normals);
+
+// Initialize objects
+pcl::GreedyProjectionTriangulation<pcl::PointNormal> gp3;
+pcl::PolygonMesh triangles;
+
+// Set the maximum distance between connected points (maximum edge length)
+gp3.setSearchRadius (3);
+
+// Set typical values for the parameters
+gp3.setMu (3);
+gp3.setMaximumNearestNeighbors (300);
+gp3.setMaximumSurfaceAngle(M_PI/4); // 45 degrees
+gp3.setMinimumAngle(M_PI/18); // 10 degrees
+gp3.setMaximumAngle(2*M_PI/3); // 120 degrees
+gp3.setNormalConsistency(false);
+
+// Get result
+gp3.setInputCloud (cloud_with_normals);
+gp3.setSearchMethod (tree2);
+gp3.reconstruct (triangles);
+
+// Additional vertex information
+std::vector<int> parts = gp3.getPartIDs();
+std::vector<int> states = gp3.getPointStates();
+
+pcl::io::saveVTKFile("mesh.vtk",triangles); 
+
+return output;
+}
 
 
 void clickCallback(const geometry_msgs::PointStamped& msg)
@@ -89,27 +207,27 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
     showtextid.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
 
     //Scale
-    psphere.scale.x = globalscale;
-    psphere.scale.y = globalscale;
-    psphere.scale.z = globalscale;
+    psphere.scale.x = 0.05*globalscale;
+    psphere.scale.y = 0.05*globalscale;
+    psphere.scale.z = 0.05*globalscale;
 
-    csphere.scale.x = globalscale;
-    csphere.scale.y = globalscale;
-    csphere.scale.z = globalscale;
+    csphere.scale.x = 0.05*globalscale;
+    csphere.scale.y = 0.05*globalscale;
+    csphere.scale.z = 0.05*globalscale;
 
-    showtext.scale.x = 0.05;
-    showtext.scale.y = 0.05;
-    showtext.scale.z = 0.05;
+    showtext.scale.x = 0.05*globalscale;
+    showtext.scale.y = 0.05*globalscale;
+    showtext.scale.z = 0.05*globalscale;
 
-    showtextid.scale.x = 0.05;
-    showtextid.scale.y = 0.05;
-    showtextid.scale.z = 0.05;
+    showtextid.scale.x = 0.05*globalscale;
+    showtextid.scale.y = 0.05*globalscale;
+    showtextid.scale.z = 0.05*globalscale;
  
-    line_list.scale.x = 0.005;
-    line_list.scale.y = 0.005;
-    line_list.scale.z = 0.005;
+    line_list.scale.x = 0.005*globalscale;
+    line_list.scale.y = 0.005*globalscale;
+    line_list.scale.z = 0.005*globalscale;
 
-    line_strip.scale.x = 0.005;
+    line_strip.scale.x = 0.005*globalscale;
 
     //Color
     points.color.b = 1.0;
@@ -249,10 +367,10 @@ cp.z=pp.z=0;
   marker_pub = nhp->advertise<visualization_msgs::Marker>("visualization_marker", 10);
 
   //Subscribers
-  click_sub = nhp->subscribe("clicked_point", 10,clickCallback);
+  click_sub = nhp->subscribe("ud_clicked_point", 10,clickCallback);
 
 
-  ptcloud_sub = nhp->subscribe("cloud_pcd", 10,ptcloudCallback);
+  //ptcloud_sub = nhp->subscribe("cloud_pcd",10,ptcloudCallback);
 
 
   ros::Rate UD_rviz_interaction_rate(30);
