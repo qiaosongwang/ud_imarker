@@ -5,7 +5,10 @@
 
 #include <ros/ros.h>
 #include <visualization_msgs/Marker.h>
-#include <boost/foreach.hpp>
+#include <sensor_msgs/PointCloud2.h>
+#include <std_msgs/String.h>
+#include <geometry_msgs/PointStamped.h>
+
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/vtk_io.h>
 #include <pcl/ros/conversions.h>
@@ -17,10 +20,17 @@
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/filters/voxel_grid.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <std_msgs/String.h>
-#include <geometry_msgs/PointStamped.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/ModelCoefficients.h>
+#include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/surface/mls.h>
+
+
+#include <boost/foreach.hpp>
 #include <boost/bind.hpp>
+
 #include <cmath>
 #include <vector>
 #include <math.h>
@@ -86,13 +96,14 @@ void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 
 //This function returns downsampled pointcloud and convert it to pcl::PolygonMesh, needs another panel to define
 //saving path for the mesh file, and mesh reconstruction parameters.
-sensor_msgs::PointCloud2::Ptr pcd2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
+sensor_msgs::PointCloud2::Ptr pt2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
 {
 
 // Load input file into a PointCloud<T> with an appropriate type
-pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
-  sensor_msgs::PointCloud2 cloud_blob;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
 
+
+  sensor_msgs::PointCloud2 cloud_blob;
   sensor_msgs::PointCloud2::Ptr input (new sensor_msgs::PointCloud2 ());
   sensor_msgs::PointCloud2::Ptr output (new sensor_msgs::PointCloud2 ());
 
@@ -112,25 +123,56 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
   sor.filter (*output);
 
  //For testing
-// pcl::PCDWriter writer;
-// writer.write ("./downsampled.pcd", *output, 
-//       Eigen::Vector4f::Zero (), Eigen::Quaternionf::Identity (), false);
+ pcl::PCDWriter writer;
+ writer.write ("./downsampled.pcd", *output, 
+       Eigen::Vector4f::Zero (), Eigen::Quaternionf::Identity (), false);
 
 printf("Downsampling completed!\n");
 
 cloud_blob=*output;
 
-// pcl::io::loadPCDFile ("./downsampled.pcd", cloud_blob);
-pcl::fromROSMsg (cloud_blob, *cloud);
-//* the data should be available in cloud
 
+
+  pcl::io::loadPCDFile ("./downsampled.pcd", *cloud);
+  // Create a KD-Tree
+  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+
+  // Output has the PointNormal type in order to store the normals calculated by MLS
+  pcl::PointCloud<pcl::PointNormal> mls_points;
+
+  // Init object (second point type is for the normals, even if unused)
+  pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointNormal> mls;
+ 
+  mls.setComputeNormals (true);
+
+  // Set parameters
+  mls.setInputCloud (cloud);
+  mls.setPolynomialFit (true);
+  mls.setSearchMethod (tree);
+  mls.setSearchRadius (0.03);
+
+  // Reconstruct
+  mls.process (mls_points);
+
+  // Save output
+  pcl::io::savePCDFile ("./smoothed.pcd", mls_points);
+
+
+
+
+//Comment this line to disable smooth
+pcl::io::loadPCDFile ("./smoothed.pcd", cloud_blob);
+pcl::fromROSMsg (cloud_blob, *cloud);
+
+
+//* the data should be available in cloud
 // Normal estimation*
 pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> n;
 pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
-pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+pcl::search::KdTree<pcl::PointXYZ>::Ptr tree2 (new pcl::search::KdTree<pcl::PointXYZ>);
 tree->setInputCloud (cloud);
 n.setInputCloud (cloud);
-n.setSearchMethod (tree);
+n.setSearchMethod (tree2);
 n.setKSearch (20);
 n.compute (*normals);
 //* normals should not contain the point normals + surface curvatures
@@ -141,8 +183,8 @@ pcl::concatenateFields (*cloud, *normals, *cloud_with_normals);
 //* cloud_with_normals = cloud + normals
 
 // Create search tree*
-pcl::search::KdTree<pcl::PointNormal>::Ptr tree2 (new pcl::search::KdTree<pcl::PointNormal>);
-tree2->setInputCloud (cloud_with_normals);
+pcl::search::KdTree<pcl::PointNormal>::Ptr tree3 (new pcl::search::KdTree<pcl::PointNormal>);
+tree3->setInputCloud (cloud_with_normals);
 
 // Initialize objects
 pcl::GreedyProjectionTriangulation<pcl::PointNormal> gp3;
@@ -161,7 +203,7 @@ gp3.setNormalConsistency(false);
 
 // Get result
 gp3.setInputCloud (cloud_with_normals);
-gp3.setSearchMethod (tree2);
+gp3.setSearchMethod (tree3);
 gp3.reconstruct (triangles);
 
 // Additional vertex information
@@ -173,6 +215,8 @@ pcl::io::saveVTKFile("mesh.vtk",triangles);
 
 return output;
 }
+
+
 
 
 void clickCallback(const geometry_msgs::PointStamped& msg)
@@ -377,7 +421,7 @@ cp.z=pp.z=0;
   click_sub = nhp->subscribe("ud_clicked_point", 10,clickCallback);
 
 
-  //ptcloud_sub = nhp->subscribe("cloud_pcd",10,ptcloudCallback);
+  ptcloud_sub = nhp->subscribe("cloud_pcd",10,ptcloudCallback);
 
 
   ros::Rate UD_rviz_interaction_rate(30);
