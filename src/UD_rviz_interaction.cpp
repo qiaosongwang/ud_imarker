@@ -3,8 +3,11 @@
 //University of Delaware
 //qiaosong@udel.edu
 
+//----------------------------------------------------------------------------
+
 #include <ros/ros.h>
 #include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/PointStamped.h>
@@ -39,20 +42,29 @@
 #include <vector>
 #include <math.h>
 
+//----------------------------------------------------------------------------
+
 typedef pcl::PointXYZRGBA PointT;
 typedef pcl::PointCloud<PointT> PointCloudT;
 
+//----------------------------------------------------------------------------
 
 using namespace std;
 using namespace visualization_msgs;
 using namespace interactive_markers;
+
+//----------------------------------------------------------------------------
 
 boost::shared_ptr<InteractiveMarkerServer> server;
 float marker_pos = 0;
 
 MenuHandler menu_handler;
 
-MenuHandler::EntryHandle h_first_entry;
+MenuHandler::EntryHandle h_delete_entry;
+MenuHandler::EntryHandle h_measure_entry;
+MenuHandler::EntryHandle h_estimate_entry;
+MenuHandler::EntryHandle h_display_entry;
+
 MenuHandler::EntryHandle h_mode_last;
 
 //changing modes
@@ -61,6 +73,7 @@ int workmode =0; //1 polyline mode 2 box selection
 
 //Defining ROS parameters
 ros::Publisher marker_pub;
+ros::Publisher marker_array_pub;
 ros::Publisher ptcloud_pub;
 ros::NodeHandle *nhp;
 ros::Subscriber click_sub;
@@ -73,18 +86,132 @@ geometry_msgs::Point cp; //current point
 geometry_msgs::Point pp; //previous point
 
 //Number of points, need to be dynamically assiagned once the panel is done
-int num_polypoints=100;
-int polycount = 0;
+//int num_polypoints=100;
+//int polycount = 0;
 
 //Declare 3D point storage structure
-vector<vector<float> > polypoints(3, vector<float>(100));
+//vector<vector<float> > polypoints(3, vector<float>(100));
+
+vector <pcl::PointXYZ> ud_cursor_pts;
+double ud_cursor_pt_radius = 0.025;
+int ud_cursor_pt_selection_index = -1;
+bool ud_cursor_pt_display_indices = false;
 
 //Declare received pointcloud from RVIZ
 pcl::PointCloud< pcl::PointXYZRGB> rviz_pt;
 pcl::PointCloud< pcl::PointXYZRGB> rviz_pt_filtered;
 
+//----------------------------------------------------------------------------
+
+void send_ud_cursor_point_markers()
+{
+  // Initialize marker parameters
+
+  visualization_msgs::Marker psphere;
+  psphere.header.frame_id="/base_link";
+  psphere.header.stamp =ros::Time::now();
+  psphere.ns="UD_rviz_interaction";
+  psphere.action=visualization_msgs::Marker::ADD;
+  psphere.pose.orientation.x =0.0;
+  psphere.pose.orientation.y =0.0;
+  psphere.pose.orientation.z =0.0;
+  psphere.pose.orientation.w =1.0;
+  
+  //ID
+  psphere.id =3;
+  
+  //Type
+  psphere.type = visualization_msgs::Marker::SPHERE_LIST;
+  
+  //Scale
+  psphere.scale.x = 2.0*ud_cursor_pt_radius;
+  psphere.scale.y = 2.0*ud_cursor_pt_radius;
+  psphere.scale.z = 2.0*ud_cursor_pt_radius;
+  
+  //Color
+
+  /*
+  psphere.color.r = 0.0;
+  psphere.color.g = 1.0;
+  psphere.color.b = 0.0;
+  psphere.color.a = 0.6;
+  */
+
+  geometry_msgs::Point p;
+  std_msgs::ColorRGBA color;
+
+  for (int i = 0; i < ud_cursor_pts.size(); i++) {
+    
+    p.x = ud_cursor_pts[i].x;
+    p.y = ud_cursor_pts[i].y;
+    p.z = ud_cursor_pts[i].z;
+
+    psphere.points.push_back(p);
+
+    if (i == ud_cursor_pt_selection_index) {
+      color.r = 1.0;
+      color.g = 0.5;
+      color.b = 0.0;
+      color.a = 0.6;
+    }
+    else {
+      color.r = 0.0;
+      color.g = 1.0;
+      color.b = 0.0;
+      color.a = 0.6;
+    }
+
+    psphere.colors.push_back(color);
+
+  }
+  
+  // Publish markers
+
+  marker_pub.publish(psphere);
+  
+  if (ud_cursor_pt_display_indices) {
+
+    visualization_msgs::MarkerArray ptextarray;
+    
+    psphere.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+    psphere.points.clear();
+    psphere.colors.clear();
+    psphere.lifetime = ros::Duration(1.0);
+
+    for (int i = 0; i < ud_cursor_pts.size(); i++) {
+
+      psphere.id = 4+ i;
+
+      psphere.pose.position.x = ud_cursor_pts[i].x;
+      psphere.pose.position.y = ud_cursor_pts[i].y;
+      psphere.pose.position.z = ud_cursor_pts[i].z; //  + 2.0 * ud_cursor_pt_radius;
+
+      psphere.color.r = 0.0;
+      psphere.color.g = 0.0;
+      psphere.color.b = 1.0;
+      psphere.color.a = 1.0;
+
+      std::stringstream point_id;
+      point_id << i;
+      psphere.text = point_id.str();
+
+      ptextarray.markers.push_back(psphere);
+    }
+
+    marker_array_pub.publish(ptextarray);
+
+  }
+
+}
+
+//----------------------------------------------------------------------------
+
 // menu code taken from here:
 // http://ftp.isr.ist.utl.pt/pub/roswiki/rviz(2f)Tutorials(2f)Interactive(20)Markers(3a20)Getting(20)Started.html#menu
+
+/*
+
+// here's an example of making menu items appear and disappear
 
 void enableCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
@@ -109,18 +236,9 @@ void enableCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feed
   ROS_INFO("update");
   server->applyChanges();
 }
+*/
 
-void modeCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
-{
-  menu_handler.setCheckState( h_mode_last, MenuHandler::UNCHECKED );
-  h_mode_last = feedback->menu_entry_id;
-  menu_handler.setCheckState( h_mode_last, MenuHandler::CHECKED );
-
-  ROS_INFO("Switching to menu entry #%d", h_mode_last);
-
-  menu_handler.reApply( *server );
-  server->applyChanges();
-}
+//----------------------------------------------------------------------------
 
 Marker makeBox( InteractiveMarker &msg )
 {
@@ -138,6 +256,8 @@ Marker makeBox( InteractiveMarker &msg )
   return marker;
 }
 
+//----------------------------------------------------------------------------
+
 InteractiveMarker makeEmptyMarker( bool dummyBox=true )
 {
   InteractiveMarker int_marker;
@@ -147,6 +267,8 @@ InteractiveMarker makeEmptyMarker( bool dummyBox=true )
 
   return int_marker;
 }
+
+//----------------------------------------------------------------------------
 
 void makeMenuMarker( std::string name )
 {
@@ -164,41 +286,175 @@ void makeMenuMarker( std::string name )
   server->insert( int_marker );
 }
 
-void deepCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+//----------------------------------------------------------------------------
+
+// get rid of the ud_cursor point that is currently selected (last added by default
+// unless an existing one is clicked on)
+
+void DeleteSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-  ROS_INFO("The deep sub-menu has been found.");
+  if (ud_cursor_pt_selection_index >= 0 && ud_cursor_pt_selection_index < ud_cursor_pts.size()) {
+    
+    ud_cursor_pts.erase(ud_cursor_pts.begin() + ud_cursor_pt_selection_index);
+
+    // make new selected point one after the one we just deleted.  if that one was the last, make 
+    // new last the selected point
+
+    if (ud_cursor_pt_selection_index >= ud_cursor_pts.size())
+      ud_cursor_pt_selection_index--;
+
+    send_ud_cursor_point_markers();
+
+  }
+
+  //  ROS_INFO("The delete last sub-menu has been found.");
 }
+
+//----------------------------------------------------------------------------
+
+// get rid of every ud_cursor point we have stored
+
+void DeleteAllCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  ud_cursor_pts.clear();
+
+  //  printf("delete all: %i points\n", ud_cursor_pts.size());
+
+  send_ud_cursor_point_markers();
+
+  //  ROS_INFO("The delete all sub-menu has been found.");
+}
+
+//----------------------------------------------------------------------------
+
+// treat all ud_cursor points as polyline and calculated its total length
+
+void MeasureLengthCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  double dx, dy, dz;
+  double total_length = 0.0;
+  
+  if (ud_cursor_pts.size() > 1) {
+
+    for (int i = 0; i < ud_cursor_pts.size() - 1; i++) {
+
+      dx = ud_cursor_pts[i].x - ud_cursor_pts[i + 1].x;
+      dy = ud_cursor_pts[i].y - ud_cursor_pts[i + 1].y;
+      dz = ud_cursor_pts[i].z - ud_cursor_pts[i + 1].z;
+
+      total_length += sqrt(dx*dx + dy*dy + dz*dz); 
+    }
+
+    printf("Total length = %.3lf\n", total_length);
+
+    //    send_ud_cursor_point_markers();
+
+  }
+
+}
+
+//----------------------------------------------------------------------------
+
+// parametrize (if n = 2) or fit (n >= 3) LINE to all ud_cursor points
+
+void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  if (ud_cursor_pts.size() < 2)
+    printf("need at least 2 points to parametrize a line\n");
+}
+
+//----------------------------------------------------------------------------
+
+// parametrize (if n = 3) or fit (n >= 4) PLANE to all ud_cursor points
+
+void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  if (ud_cursor_pts.size() < 3)
+    printf("need at least 3 points to parametrize a plane\n");
+
+}
+
+//----------------------------------------------------------------------------
+
+// set flag to draw ud_cursor point indices as text next to spheres
+
+void DisplayIndicesCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  MenuHandler::EntryHandle handle = feedback->menu_entry_id;
+  MenuHandler::CheckState state;
+  menu_handler.getCheckState( handle, state );
+
+  if ( state == MenuHandler::CHECKED ) {
+    menu_handler.setCheckState( handle, MenuHandler::UNCHECKED );
+    ud_cursor_pt_display_indices = false;
+  }
+  else {
+    menu_handler.setCheckState( handle, MenuHandler::CHECKED );
+    ud_cursor_pt_display_indices = true;
+  }
+
+  menu_handler.reApply( *server );
+  //  ros::Duration(2.0).sleep();
+  //  ROS_INFO("update");
+  server->applyChanges();
+
+  send_ud_cursor_point_markers();
+
+}
+
+//----------------------------------------------------------------------------
 
 void initMenu()
 {
-  h_first_entry = menu_handler.insert( "First Entry" );
-  MenuHandler::EntryHandle entry = menu_handler.insert( h_first_entry, "deep" );
-  entry = menu_handler.insert( entry, "sub" );
-  entry = menu_handler.insert( entry, "menu", &deepCb );
+  MenuHandler::EntryHandle entry;
+
+  // DELETION
+
+  h_delete_entry = menu_handler.insert( "Delete..." );
+
+  entry = menu_handler.insert( h_delete_entry, "Selected point", &DeleteSelectedCb);
+  entry = menu_handler.insert( h_delete_entry, "All points", &DeleteAllCb );
   
-  menu_handler.setCheckState( menu_handler.insert( "Show First Entry", &enableCb ), MenuHandler::CHECKED );
+  //  menu_handler.setCheckState( menu_handler.insert( "Show Delete Entry", &enableCb ), MenuHandler::CHECKED );
 
-  MenuHandler::EntryHandle sub_menu_handle = menu_handler.insert( "Switch" );
+  // MEASUREMENT
 
-  for ( int i=0; i<5; i++ )
-  {
-    std::ostringstream s;
-    s << "Mode " << i;
-    h_mode_last = menu_handler.insert( sub_menu_handle, s.str(), &modeCb );
-    menu_handler.setCheckState( h_mode_last, MenuHandler::UNCHECKED );
-  }
-  //check the very last entry
-  menu_handler.setCheckState( h_mode_last, MenuHandler::CHECKED );
+  h_measure_entry = menu_handler.insert( "Measure..." );
+
+  entry = menu_handler.insert( h_measure_entry, "Length", &MeasureLengthCb);
+  // entry = menu_handler.insert( h_measure_entry, "Area", &MeasureAreaCb );
+
+  // ESTIMATION
+
+  h_estimate_entry = menu_handler.insert( "Estimate..." );
+
+  entry = menu_handler.insert( h_estimate_entry, "Line", &EstimateLineCb);
+  entry = menu_handler.insert( h_estimate_entry, "Plane", &EstimatePlaneCb );
+
+  // DISPLAY
+
+  h_display_entry = menu_handler.insert( "Display..." );
+
+  entry = menu_handler.insert( h_display_entry, "Indices", &DisplayIndicesCb);
+  if (ud_cursor_pt_display_indices)
+    menu_handler.setCheckState( entry, MenuHandler::CHECKED );
+  else
+    menu_handler.setCheckState( entry, MenuHandler::UNCHECKED );
+
 }
 
+//----------------------------------------------------------------------------
+//----------------------------------------------------------------------------
 
-
+/*
 float calc_cp_dist(int i, vector<vector<float> > polypoints)
 {
   float cp_dist= sqrt((polypoints[0][i]-polypoints[0][i-1])*(polypoints[0][i]-polypoints[0][i-1])+(polypoints[1][i]-polypoints[1][i-1])*(polypoints[1][i]-polypoints[1][i-1])+(polypoints[2][i]-polypoints[2][i-1])*(polypoints[2][i]-polypoints[2][i-1]));
   return cp_dist;
 }
+*/
 
+//----------------------------------------------------------------------------
 
 void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 {
@@ -229,6 +485,7 @@ pub.publish (cloud_filtered);
 */
 }
 
+//----------------------------------------------------------------------------
 
 //This function returns downsampled pointcloud and convert it to pcl::PolygonMesh, needs another panel to define
 //saving path for the mesh file, and mesh reconstruction parameters.
@@ -357,6 +614,7 @@ pcl::io::saveVTKFile("mesh.vtk",triangles);
 return output;
 }
 
+//----------------------------------------------------------------------------
 
 //Plane fitting on user clicked 3D point coordinates, works directly on the global vector array: polypoints
 //Also need a panel to tell the function when to stop
@@ -379,10 +637,65 @@ void click_segplane()
 
 }
 
+//----------------------------------------------------------------------------
 
+// is the point clicked already in our list?
+
+bool check_selected(pcl::PointXYZ P, int & index)
+{
+  double dx, dy, dz;
+  double dist_squared, r_squared;
+  bool return_val = false;
+
+  r_squared = ud_cursor_pt_radius * ud_cursor_pt_radius;
+
+  for (int i = 0; i < ud_cursor_pts.size(); i++) {
+
+    dx = P.x - ud_cursor_pts[i].x;
+    dy = P.y - ud_cursor_pts[i].y;
+    dz = P.z - ud_cursor_pts[i].z;
+
+    dist_squared = dx*dx + dy*dy + dz*dz;
+
+    if (dist_squared < r_squared) {
+      index = i;
+      return_val = true;
+      r_squared = dist_squared;
+    }      
+  }
+
+  return return_val;
+}
+
+//----------------------------------------------------------------------------
+
+// this gets called when a new ud_cursor point comes in
 
 void clickCallback(const geometry_msgs::PointStamped& msg)
 {
+  pcl::PointXYZ P;
+
+  P.x = msg.point.x;
+  P.y = msg.point.y;
+  P.z = msg.point.z;
+  
+  if (!check_selected(P, ud_cursor_pt_selection_index)) {
+
+    ud_cursor_pts.push_back(P);
+
+    // last point added is automatically selected
+
+    ud_cursor_pt_selection_index = ud_cursor_pts.size() - 1;
+  }
+  else {
+    //    printf("selected %i!\n", ud_cursor_pt_selection_index);
+  }
+
+  //  printf("add: %i points\n", ud_cursor_pts.size());
+
+  send_ud_cursor_point_markers();
+
+  /*
 
   //Getting ROS geometry msgs
   //ROS_INFO("New Point at X: %f, Y: %f, Z: %f\n", msg.point.x, msg.point.y, msg.point.z);
@@ -497,11 +810,7 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
     p.x = polypoints[0][i];
     p.y = polypoints[1][i];
     p.z = polypoints[2][i];
-    /*
-printf("%f\n", polypoints[0][i]);
-printf("%f\n", polypoints[1][i]);
-printf("%f\n", polypoints[2][i]);
-*/
+
     points.points.push_back(p);
     line_strip.points.push_back(p);
     
@@ -519,8 +828,10 @@ printf("%f\n", polypoints[2][i]);
     // line_list.points.push_back(p);
     // p.z += 1.0;
     //line_list.points.push_back(p);
-    if(i>0)
-      cpdist=cpdist+calc_cp_dist(i,polypoints);
+
+    //    if(i>0)
+    //      cpdist=cpdist+calc_cp_dist(i,polypoints);
+    
   }
   
   pp.x = cp.x;
@@ -546,19 +857,22 @@ printf("%f\n", polypoints[2][i]);
   marker_pub.publish(line_strip);
   
   
-  if (polycount!=num_polypoints)
-    polycount++;
-  else {
-    polycount=0;
-    cpdist=0;
-  }
+  //  if (polycount!=num_polypoints)
+  //    polycount++;
+  //  else {
+  //    polycount=0;
+  //    cpdist=0;
+  //  }
+  
+  */
   
 }
 
-
+//----------------------------------------------------------------------------
 
 int main( int argc, char** argv )
 {
+  ud_cursor_pts.clear();
 
   fp.x=1;
   fp.y=1;
@@ -583,16 +897,17 @@ int main( int argc, char** argv )
 
    nhp= new ros::NodeHandle();
 
-  //Publishers
+  // Publishers
+
   marker_pub = nhp->advertise<visualization_msgs::Marker>("visualization_marker", 10);
+  marker_array_pub = nhp->advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 10);
   ptcloud_pub = nhp->advertise<sensor_msgs::PointCloud2> ("ud_output", 1);
 
-  //Subscribers
-  click_sub = nhp->subscribe("ud_clicked_point", 10,clickCallback);
+  // Subscribers
 
+  click_sub = nhp->subscribe("ud_clicked_point", 10, clickCallback);
 
-  ptcloud_sub = nhp->subscribe("cloud_pcd",10,ptcloudCallback);
-
+  ptcloud_sub = nhp->subscribe("cloud_pcd", 10, ptcloudCallback);
 
 
   ros::Rate UD_rviz_interaction_rate(30);
@@ -603,3 +918,6 @@ int main( int argc, char** argv )
     ros::spinOnce();
   }
 }
+
+//----------------------------------------------------------------------------
+//----------------------------------------------------------------------------
