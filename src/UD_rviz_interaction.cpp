@@ -61,6 +61,7 @@ int workmode =0; //1 polyline mode 2 box selection
 
 //Defining ROS parameters
 ros::Publisher marker_pub;
+ros::Publisher ptcloud_pub;
 ros::NodeHandle *nhp;
 ros::Subscriber click_sub;
 ros::Subscriber ptcloud_sub;
@@ -202,6 +203,10 @@ float calc_cp_dist(int i, vector<vector<float> > polypoints)
 
 void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 {
+
+  sensor_msgs::PointCloud2 output;
+  // Publish the data
+  ptcloud_pub.publish (output);
 
 /*
 pcl::fromROSMsg(*input, rviz_pt);
@@ -580,12 +585,14 @@ int main( int argc, char** argv )
 
   //Publishers
   marker_pub = nhp->advertise<visualization_msgs::Marker>("visualization_marker", 10);
+  ptcloud_pub = nhp->advertise<sensor_msgs::PointCloud2> ("ud_output", 1);
 
   //Subscribers
   click_sub = nhp->subscribe("ud_clicked_point", 10,clickCallback);
 
 
   ptcloud_sub = nhp->subscribe("cloud_pcd",10,ptcloudCallback);
+
 
 
   ros::Rate UD_rviz_interaction_rate(30);
