@@ -68,7 +68,8 @@ MenuHandler::EntryHandle h_display_entry;
 MenuHandler::EntryHandle h_mode_last;
 
 //changing modes
-int workmode =0; //1 polyline mode 2 box selection
+int workmode = 0; //0- distance, 1 polyline mode 2 box selection 3- selct 3 points to find a plane (BMF)
+
 
 
 //Defining ROS parameters
@@ -80,7 +81,7 @@ ros::Subscriber click_sub;
 ros::Subscriber ptcloud_sub;
 
 float cpdist=0; //Current frame
-float globalscale =1;  //What are the units on this? -Brad
+float globalscale = 1;  //What are the units on this? -Brad
 geometry_msgs::Point fp; //future point
 geometry_msgs::Point cp; //current point
 geometry_msgs::Point pp; //previous point
@@ -697,13 +698,56 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
 
   /*
 
+  if(workmode == 3)  //plane finding
+  {
+  
   //Getting ROS geometry msgs
   //ROS_INFO("New Point at X: %f, Y: %f, Z: %f\n", msg.point.x, msg.point.y, msg.point.z);
   fp.x = msg.point.x;
   fp.y = msg.point.y;
   fp.z = msg.point.z;
   
-
+  //Need to extend to allow 3 clicks which determine a plane
+  
+  //marker
+  
+  visualization_msgs::Marker plane1;
+  plane1.header.frame_id = "base_link";
+  plane1.header.stamp = ros::Time();
+  plane1.ns = "UD_rviz_interaction";
+  plane1.id = 0;
+  plane1.type = visualization_msgs::Marker::CUBE;
+  plane1.action = visualization_msgs::Marker::ADD;
+  plane1.pose.position.x = fp.x;
+  plane1.pose.position.y = fp.y; 
+  plane1.pose.position.z = fp.z;
+  //need to determine plane orientation
+  plane1.pose.orientation.x = 0.0;
+  plane1.pose.orientation.y = 0.0;
+  plane1.pose.orientation.z = 0.0;
+  plane1.pose.orientation.w = 1.0;
+  plane1.scale.x = 1;
+  plane1.scale.y = 1;
+  plane1.scale.z = 0.1;
+  plane1.color.a = 1.0;
+  plane1.color.r = 0.0;
+  plane1.color.g = 1.0;
+  plane1.color.b = 0.0;
+  //only if using a MESH_RESOURCE marker type:
+  //UD_rviz_interaction.mesh_resource = "package://pr2_description/meshes/base_v0/base.dae";
+  marker_pub.publish( plane1 );
+	  
+  }
+  else if(workmode == 0)  //distance finding
+  {
+  
+  //Getting ROS geometry msgs
+  //ROS_INFO("New Point at X: %f, Y: %f, Z: %f\n", msg.point.x, msg.point.y, msg.point.z);
+  fp.x = msg.point.x;
+  fp.y = msg.point.y;
+  fp.z = msg.point.z;
+  
+  
   // Initialize marker parameters
   visualization_msgs::Marker points, line_strip, line_list , psphere, csphere, arrow, showtext,showtextid;
   showtext.header.frame_id = arrow.header.frame_id=psphere.header.frame_id=csphere.header.frame_id = points.header.frame_id = line_strip.header.frame_id = line_list.header.frame_id = showtextid.header.frame_id = "/base_link";
@@ -863,9 +907,10 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
   //    polycount=0;
   //    cpdist=0;
   //  }
-  
-  */
-  
+    
+  } //end of workmode 0 code (distance finding)
+    */
+
 }
 
 //----------------------------------------------------------------------------
