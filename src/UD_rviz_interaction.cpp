@@ -193,18 +193,18 @@ void initMenu()
 
 
 
-
-
 float calc_cp_dist(int i, vector<vector<float> > polypoints)
 {
   float cp_dist= sqrt((polypoints[0][i]-polypoints[0][i-1])*(polypoints[0][i]-polypoints[0][i-1])+(polypoints[1][i]-polypoints[1][i-1])*(polypoints[1][i]-polypoints[1][i-1])+(polypoints[2][i]-polypoints[2][i-1])*(polypoints[2][i]-polypoints[2][i-1]));
   return cp_dist;
 }
 
+
 void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 {
 
-  sensor_msgs::PointCloud2 output;
+  //do the pointcloud processing
+  sensor_msgs::PointCloud2 output= *input;
   // Publish the data
   ptcloud_pub.publish (output);
 
@@ -393,7 +393,7 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
 
   // Initialize marker parameters
   visualization_msgs::Marker points, line_strip, line_list , psphere, csphere, arrow, showtext,showtextid;
-  showtext.header.frame_id = arrow.header.frame_id=psphere.header.frame_id=csphere.header.frame_id = points.header.frame_id =     line_strip.header.frame_id = line_list.header.frame_id = showtextid.header.frame_id = "/base_link";
+  showtext.header.frame_id = arrow.header.frame_id=psphere.header.frame_id=csphere.header.frame_id = points.header.frame_id = line_strip.header.frame_id = line_list.header.frame_id = showtextid.header.frame_id = "/base_link";
   showtext.header.stamp = arrow.header.stamp=psphere.header.stamp =csphere.header.stamp= points.header.stamp = line_strip.header.stamp = line_list.header.stamp = ros::Time::now();
   showtext.ns = arrow.ns=psphere.ns=csphere.ns=points.ns = line_strip.ns = line_list.ns = "UD_rviz_interaction";
   showtext.action = arrow.action=psphere.action=csphere.action=points.action = line_strip.action = line_list.action = visualization_msgs::Marker::ADD;
@@ -498,10 +498,10 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
     p.y = polypoints[1][i];
     p.z = polypoints[2][i];
     /*
-      printf("%f\n", polypoints[0][i]);
-      printf("%f\n", polypoints[1][i]);
-      printf("%f\n", polypoints[2][i]);
-    */
+printf("%f\n", polypoints[0][i]);
+printf("%f\n", polypoints[1][i]);
+printf("%f\n", polypoints[2][i]);
+*/
     points.points.push_back(p);
     line_strip.points.push_back(p);
     
@@ -575,10 +575,10 @@ int main( int argc, char** argv )
   initMenu();
 
   makeMenuMarker( "marker1" );
-  //  makeMenuMarker( "marker2" );
+  // makeMenuMarker( "marker2" );
 
   menu_handler.apply( *server, "marker1" );
-  //  menu_handler.apply( *server, "marker2" );
+  // menu_handler.apply( *server, "marker2" );
   server->applyChanges();
 
    nhp= new ros::NodeHandle();
@@ -603,4 +603,3 @@ int main( int argc, char** argv )
     ros::spinOnce();
   }
 }
-
