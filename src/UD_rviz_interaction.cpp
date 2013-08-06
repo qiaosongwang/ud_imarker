@@ -67,7 +67,7 @@ ros::Subscriber click_sub;
 ros::Subscriber ptcloud_sub;
 
 float cpdist=0; //Current frame
-float globalscale =100;
+float globalscale =1;  //What are the units on this? -Brad
 geometry_msgs::Point fp; //future point
 geometry_msgs::Point cp; //current point
 geometry_msgs::Point pp; //previous point
