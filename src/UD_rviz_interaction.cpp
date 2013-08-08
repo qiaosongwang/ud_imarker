@@ -17,9 +17,9 @@
 
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/vtk_io.h>
+#include <pcl/io/ply_io.h>
 #include <pcl/ros/conversions.h>
 #include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/surface/gp3.h>
@@ -34,6 +34,11 @@
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/surface/mls.h>
 
+#include <pcl/search/kdtree.h>
+#include <pcl/features/normal_3d_omp.h>
+
+#include <pcl/surface/poisson.h>
+#include <pcl/filters/passthrough.h>
 
 #include <boost/foreach.hpp>
 #include <boost/bind.hpp>
@@ -672,7 +677,7 @@ pcl::io::saveVTKFile("mesh.vtk",triangles);
  //PointCloud<PointXYZ>::Ptr cloud (new PointCloud<PointXYZ>);
 
 
-/*
+
       cout << "loaded" << endl;
 
       cout << "begin passthrough filter" << endl;
@@ -729,7 +734,7 @@ pcl::io::saveVTKFile("mesh.vtk",triangles);
 
       io::savePLYFile("poisson", mesh);
 
-*/
+
 
 return output;
 }
