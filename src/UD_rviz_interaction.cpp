@@ -377,10 +377,78 @@ void MeasureLengthCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
 
 // parametrize (if n = 2) or fit (n >= 3) LINE to all ud_cursor points
 
+
 void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
   if (ud_cursor_pts.size() < 2)
     printf("need at least 2 points to parametrize a line\n");
+  if (ud_cursor_pts.size() == 2)
+  {
+	  //directly find the parametric form of a line
+	  
+	  double dx, dy, dz;
+	  
+      dx = ud_cursor_pts[1].x - ud_cursor_pts[0].x;
+      dy = ud_cursor_pts[1].y - ud_cursor_pts[0].y;
+      dz = ud_cursor_pts[1].z - ud_cursor_pts[0].z;
+      
+      cout << "The line equation is: " << endl;
+      cout << "x = " << ud_cursor_pts[0].x << " + " << dx << "t" << endl;
+      cout << "y = " << ud_cursor_pts[0].y << " + " << dy << "t" << endl;
+      cout << "z = " << ud_cursor_pts[0].z << " + " << dz << "t" << endl;
+	  
+  }
+  if( ud_cursor_pts.size() > 2 )
+  {
+    pcl::PointCloud<pcl::PointXYZ> cloud;
+
+  // Fill in the cloud data
+  cloud.width  = ud_cursor_pts.size();
+  cloud.height = 1;
+  cloud.points.resize (cloud.width * cloud.height);
+
+  for (size_t i = 0; i < cloud.points.size (); ++i)
+  {
+    cloud.points[i].x = ud_cursor_pts[i].x;
+    cloud.points[i].y = ud_cursor_pts[i].y;
+    cloud.points[i].z = ud_cursor_pts[i].z;
+  }
+
+
+  pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
+  pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
+  // Create the segmentation object
+  pcl::SACSegmentation<pcl::PointXYZ> seg;
+  // Optional
+  seg.setOptimizeCoefficients (true);
+  // Mandatory
+  seg.setModelType (pcl::SACMODEL_LINE);
+  seg.setMethodType (pcl::SAC_RANSAC);
+  seg.setDistanceThreshold (0.01);
+
+  seg.setInputCloud (cloud.makeShared ());
+  seg.segment (*inliers, *coefficients);
+
+  if (inliers->indices.size () == 0)
+  {
+    PCL_ERROR ("Could not estimate a planar model for the given dataset.");
+  }
+
+  std::cerr << "Line params (x, y, z of point, direction vector) : " << coefficients->values[0] << " " 
+                                      << coefficients->values[1] << " "
+                                      << coefficients->values[2] << " " 
+                                      << coefficients->values[3] << " " 
+                                       << coefficients->values[4] << " " 
+                                        << coefficients->values[5]
+                                        << std::endl;
+
+  std::cerr << "Model inliers: " << inliers->indices.size () << std::endl;
+  for (size_t i = 0; i < inliers->indices.size (); ++i)
+    std::cerr << inliers->indices[i] << "    " << cloud.points[inliers->indices[i]].x << " "
+                                               << cloud.points[inliers->indices[i]].y << " "
+                                               << cloud.points[inliers->indices[i]].z << std::endl;
+  }
+  
 }
 
 //----------------------------------------------------------------------------
