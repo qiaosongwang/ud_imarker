@@ -35,6 +35,7 @@
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/passthrough.h>
+#include <pcl/filters/crop_box.h>
 //----------------------------------------------------------------------------
 
 #include <pcl/sample_consensus/method_types.h>
@@ -52,6 +53,9 @@
 #include <pcl/surface/gp3.h>
 #include <pcl/surface/poisson.h>
 #include <pcl/surface/marching_cubes_rbf.h>
+//----------------------------------------------------------------------------
+
+#include <Eigen/Core>
 //----------------------------------------------------------------------------
 
 #include <boost/foreach.hpp>
@@ -629,6 +633,38 @@ pub.publish (cloud_filtered);
 */
 }
 
+
+//----------------------------------------------------------------------------
+
+//Give input pointcloud, max point and min point to crop the pointcloud, currently cannot rotate the cropbox
+pcl::PointCloud<pcl::PointXYZ>::Ptr CropboxCb( pcl::PointCloud<pcl::PointXYZ>::Ptr input, Eigen::Vector4f min, Eigen::Vector4f max )
+{
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
+  cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
+  cloud=input;
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr ptr_cloud_square;
+	ptr_cloud_square = pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
+
+	pcl::CropBox<pcl::PointXYZ> cropFilter;
+	cropFilter.setInputCloud (cloud);
+
+	Eigen::Vector4f minPoint;
+	minPoint[0]=min[0];  // define minimum point x
+	minPoint[1]=min[1];  // define minimum point y
+	minPoint[2]=min[2];  // define minimum point z
+	Eigen::Vector4f maxPoint;
+	maxPoint[0]=max[0];  // define max point x
+	maxPoint[1]=max[1];  // define max point y
+	maxPoint[2]=max[2];  // define max point z
+
+	cropFilter.setMin(minPoint);
+	cropFilter.setMax(maxPoint);
+	cropFilter.filter (*ptr_cloud_square);     
+	return ptr_cloud_square;
+
+}
+
 //----------------------------------------------------------------------------
 
 //This function downsamples the pointcloud and converts it to pcl::PolygonMesh using fast trangulation, needs another panel to define
@@ -708,8 +744,8 @@ void click_pt2mesh_triangulation(sensor_msgs::PointCloud2::Ptr rawpt)
 
 //* the data should be available in cloud
 // Normal estimation*
-	pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> n;
-	pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
+  pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> n;
+  pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
 	pcl::search::KdTree<pcl::PointXYZ>::Ptr tree2 (new pcl::search::KdTree<pcl::PointXYZ>);
 	tree->setInputCloud (cloud);
 	n.setInputCloud (cloud);
@@ -803,10 +839,10 @@ void click_pt2mesh_poisson(sensor_msgs::PointCloud2::Ptr rawpt)
 
 //Begin passthrough filter
 //Pointcloud loaded
-      PointCloud<PointXYZ>::Ptr filtered(new PointCloud<PointXYZ>());
-      PassThrough<PointXYZ> filter;
-      filter.setInputCloud(cloud);
-      filter.filter(*filtered);
+  PointCloud<PointXYZ>::Ptr filtered(new PointCloud<PointXYZ>());
+  PassThrough<PointXYZ> filter;
+  filter.setInputCloud(cloud);
+  filter.filter(*filtered);
 //Passthrough filter complete
 
 //Uncomment if you want to do mls smoothing
@@ -825,39 +861,39 @@ void click_pt2mesh_poisson(sensor_msgs::PointCloud2::Ptr rawpt)
       // cout << "MLS complete" << endl;
 
 //Begin normal estimation
-      NormalEstimationOMP<PointXYZ, Normal> ne;
-      ne.setNumberOfThreads(8);
-      ne.setInputCloud(filtered);
-      ne.setRadiusSearch(0.01);
-      Eigen::Vector4f centroid;
-      compute3DCentroid(*filtered, centroid);
-      ne.setViewPoint(centroid[0], centroid[1], centroid[2]);
+  NormalEstimationOMP<PointXYZ, Normal> ne;
+  ne.setNumberOfThreads(8);
+  ne.setInputCloud(filtered);
+  ne.setRadiusSearch(0.01);
+  Eigen::Vector4f centroid;
+  compute3DCentroid(*filtered, centroid);
+  ne.setViewPoint(centroid[0], centroid[1], centroid[2]);
 
-      PointCloud<Normal>::Ptr cloud_normals (new PointCloud<Normal>());
-      ne.compute(*cloud_normals);
+  PointCloud<Normal>::Ptr cloud_normals (new PointCloud<Normal>());
+  ne.compute(*cloud_normals);
 
 //Normal estimation complete
 
 //Reverse normals' direction
 
-      for(size_t i = 0; i < cloud_normals->size(); ++i){
-       cloud_normals->points[i].normal_x *= -1;
-       cloud_normals->points[i].normal_y *= -1;
-       cloud_normals->points[i].normal_z *= -1;
-      }
+  for(size_t i = 0; i < cloud_normals->size(); ++i){
+  cloud_normals->points[i].normal_x *= -1;
+  cloud_normals->points[i].normal_y *= -1;
+  cloud_normals->points[i].normal_z *= -1;
+  }
 
 //Combine points and normals
-      PointCloud<PointNormal>::Ptr cloud_smoothed_normals(new PointCloud<PointNormal>());
-      concatenateFields(*filtered, *cloud_normals, *cloud_smoothed_normals);
+  PointCloud<PointNormal>::Ptr cloud_smoothed_normals(new PointCloud<PointNormal>());
+  concatenateFields(*filtered, *cloud_normals, *cloud_smoothed_normals);
 
 //Begin poisson reconstruction
-      Poisson<PointNormal> poisson;
-      poisson.setDepth(9);
-      poisson.setInputCloud(cloud_smoothed_normals);
-      PolygonMesh mesh;
-      poisson.reconstruct(mesh);
+  Poisson<PointNormal> poisson;
+  poisson.setDepth(9);
+  poisson.setInputCloud(cloud_smoothed_normals);
+  PolygonMesh mesh;
+  poisson.reconstruct(mesh);
 //Save mesh file
-      io::savePLYFile("poisson", mesh);
+  io::savePLYFile("poisson", mesh);
 
 }
 
@@ -903,32 +939,32 @@ void click_pt2mesh_cube(sensor_msgs::PointCloud2::Ptr rawpt)
 
 //Pointcloud loaded
 
-    NormalEstimationOMP<PointXYZ, Normal> ne;
-    search::KdTree<PointXYZ>::Ptr tree1 (new search::KdTree<PointXYZ>);
-    tree1->setInputCloud (cloud);
-    ne.setInputCloud (cloud);
-    ne.setSearchMethod (tree1);
-    ne.setKSearch (20);
-    PointCloud<Normal>::Ptr normals (new PointCloud<Normal>);
-    ne.compute (*normals);
+  NormalEstimationOMP<PointXYZ, Normal> ne;
+  search::KdTree<PointXYZ>::Ptr tree1 (new search::KdTree<PointXYZ>);
+  tree1->setInputCloud (cloud);
+  ne.setInputCloud (cloud);
+  ne.setSearchMethod (tree1);
+  ne.setKSearch (20);
+  PointCloud<Normal>::Ptr normals (new PointCloud<Normal>);
+  ne.compute (*normals);
          
 // Concatenate the XYZ and normal fields
-    PointCloud<PointNormal>::Ptr cloud_with_normals (new PointCloud<PointNormal>);
-    concatenateFields(*cloud, *normals, *cloud_with_normals);
+  PointCloud<PointNormal>::Ptr cloud_with_normals (new PointCloud<PointNormal>);
+  concatenateFields(*cloud, *normals, *cloud_with_normals);
  
 // Create search tree
-    search::KdTree<PointNormal>::Ptr tree (new search::KdTree<PointNormal>);
-    tree->setInputCloud (cloud_with_normals);
+  search::KdTree<PointNormal>::Ptr tree (new search::KdTree<PointNormal>);
+  tree->setInputCloud (cloud_with_normals);
     
 //Begin marching cubes reconstruction
 
-    MarchingCubesRBF<PointNormal> mc;
-    PolygonMesh::Ptr triangles(new PolygonMesh);
-    mc.setInputCloud (cloud_with_normals);
-    mc.setSearchMethod (tree);
-    mc.reconstruct (*triangles);
+  MarchingCubesRBF<PointNormal> mc;
+  PolygonMesh::Ptr triangles(new PolygonMesh);
+  mc.setInputCloud (cloud_with_normals);
+  mc.setSearchMethod (tree);
+  mc.reconstruct (*triangles);
 //Save mesh file
-      io::savePLYFile("cube", *triangles);
+  io::savePLYFile("cube", *triangles);
 }
 
 
