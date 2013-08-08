@@ -15,6 +15,7 @@
 
 #include <interactive_markers/interactive_marker_server.h>
 #include <interactive_markers/menu_handler.h>
+
 //----------------------------------------------------------------------------
 
 #include <pcl/io/pcd_io.h>
@@ -79,10 +80,10 @@ using namespace pcl;
 //----------------------------------------------------------------------------
 
 boost::shared_ptr<InteractiveMarkerServer> server;
-float marker_pos = 0;
 
 MenuHandler menu_handler;
 
+MenuHandler::EntryHandle h_move_entry;
 MenuHandler::EntryHandle h_delete_entry;
 MenuHandler::EntryHandle h_measure_entry;
 MenuHandler::EntryHandle h_estimate_entry;
@@ -94,6 +95,8 @@ MenuHandler::EntryHandle h_mode_last;
 int workmode = 0; //0- distance, 1 polyline mode 2 box selection 3- select 3 points to find a plane
 
 
+double ransac_inlier_distance_threshold = 0.05;
+double ransac_inlier_distance_threshold_delta = 0.01;
 
 //Defining ROS parameters
 ros::Publisher marker_pub;
@@ -118,8 +121,11 @@ geometry_msgs::Point pp; //previous point
 
 vector <pcl::PointXYZ> ud_cursor_pts;
 double ud_cursor_pt_radius = 0.025;
+double ud_cursor_pt_line_width = 0.01;
 int ud_cursor_pt_selection_index = -1;
 bool ud_cursor_pt_display_indices = false;
+bool ud_cursor_pt_display_connections = false;
+bool ud_cursor_pt_do_move = false;
 
 //Declare received pointcloud from RVIZ
 pcl::PointCloud< pcl::PointXYZRGB> rviz_pt;
@@ -192,6 +198,25 @@ void send_ud_cursor_point_markers()
   // Publish markers
 
   marker_pub.publish(psphere);
+
+  if (ud_cursor_pt_display_connections) {
+
+    psphere.id = 2;
+    
+    psphere.type = visualization_msgs::Marker::LINE_STRIP;
+
+    psphere.scale.x = ud_cursor_pt_line_width;
+
+    for (int i = 0; i < ud_cursor_pts.size(); i++) {
+      psphere.colors[i].r = 0.0;
+      psphere.colors[i].g = 0.0;
+      psphere.colors[i].b = 1.0;
+      psphere.colors[i].a = 0.6; 
+    }
+
+    marker_pub.publish(psphere);
+
+  }
   
   if (ud_cursor_pt_display_indices) {
 
@@ -225,6 +250,8 @@ void send_ud_cursor_point_markers()
     marker_array_pub.publish(ptextarray);
 
   }
+
+
 
 }
 
@@ -269,13 +296,14 @@ Marker makeBox( InteractiveMarker &msg )
   Marker marker;
 
   marker.type = Marker::CUBE;
-  marker.scale.x = msg.scale * 0.45;
-  marker.scale.y = msg.scale * 0.45;
-  marker.scale.z = msg.scale * 0.45;
-  marker.color.r = 0.5;
-  marker.color.g = 0.5;
-  marker.color.b = 0.5;
-  marker.color.a = 1.0;
+  marker.scale.x = msg.scale;
+  marker.scale.y = msg.scale;
+  marker.scale.z = msg.scale;
+  marker.color.r = 1.0;
+  marker.color.g = 0.0;
+  marker.color.b = 1.0;
+  marker.color.a = 0.5;
+
 
   return marker;
 }
@@ -286,8 +314,11 @@ InteractiveMarker makeEmptyMarker( bool dummyBox=true )
 {
   InteractiveMarker int_marker;
   int_marker.header.frame_id = "/base_link";
-  int_marker.pose.position.y = -3.0 * marker_pos++;;
-  int_marker.scale = 1;
+  int_marker.pose.position.x = 0.0;
+  int_marker.pose.position.y = 0.0;
+  int_marker.pose.position.z = 0.0;
+
+  int_marker.scale = 4.0*ud_cursor_pt_radius;
 
   return int_marker;
 }
@@ -326,6 +357,16 @@ void DeleteSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstP
 
     if (ud_cursor_pt_selection_index >= ud_cursor_pts.size())
       ud_cursor_pt_selection_index--;
+    
+    if (ud_cursor_pts.size() == 0) {
+
+      ud_cursor_pt_selection_index = -1;
+
+      ud_cursor_pt_do_move = false;
+      menu_handler.setCheckState( h_move_entry, MenuHandler::UNCHECKED );
+      menu_handler.reApply( *server );
+      server->applyChanges();
+    }
 
     send_ud_cursor_point_markers();
 
@@ -341,6 +382,13 @@ void DeleteSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstP
 void DeleteAllCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
   ud_cursor_pts.clear();
+
+  ud_cursor_pt_selection_index = -1;
+
+  ud_cursor_pt_do_move = false;
+  menu_handler.setCheckState( h_move_entry, MenuHandler::UNCHECKED );
+  menu_handler.reApply( *server );
+  server->applyChanges();
 
   //  printf("delete all: %i points\n", ud_cursor_pts.size());
 
@@ -375,6 +423,24 @@ void MeasureLengthCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
 
   }
 
+}
+
+//----------------------------------------------------------------------------
+
+void IncreaseInlierDistanceThreshCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  ransac_inlier_distance_threshold += ransac_inlier_distance_threshold_delta;
+  printf("ransac inlier distance thresh = %.3lf\n", ransac_inlier_distance_threshold);
+}
+
+//----------------------------------------------------------------------------
+
+void DecreaseInlierDistanceThreshCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  if (ransac_inlier_distance_threshold > ransac_inlier_distance_threshold_delta) {
+    ransac_inlier_distance_threshold -= ransac_inlier_distance_threshold_delta;
+    printf("ransac inlier distance thresh = %.3lf\n", ransac_inlier_distance_threshold);
+  }
 }
 
 //----------------------------------------------------------------------------
@@ -428,7 +494,7 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
   // Mandatory
   seg.setModelType (pcl::SACMODEL_LINE);
   seg.setMethodType (pcl::SAC_RANSAC);
-  seg.setDistanceThreshold (0.01);
+  seg.setDistanceThreshold (ransac_inlier_distance_threshold);
 
   seg.setInputCloud (cloud.makeShared ());
   seg.segment (*inliers, *coefficients);
@@ -496,7 +562,7 @@ void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
   // Mandatory
   seg.setModelType (pcl::SACMODEL_PLANE);
   seg.setMethodType (pcl::SAC_RANSAC);
-  seg.setDistanceThreshold (0.01);
+  seg.setDistanceThreshold (ransac_inlier_distance_threshold);
 
   seg.setInputCloud (cloud.makeShared ());
   seg.segment (*inliers, *coefficients);
@@ -520,6 +586,34 @@ void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
  
 
 }
+}
+
+//----------------------------------------------------------------------------
+
+// set flag to interpret next click as movement of selected point rather than addition of new point
+
+void MoveSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  MenuHandler::EntryHandle handle = feedback->menu_entry_id;
+  MenuHandler::CheckState state;
+  menu_handler.getCheckState( handle, state );
+
+  if ( state == MenuHandler::CHECKED ) {
+    menu_handler.setCheckState( handle, MenuHandler::UNCHECKED );
+    ud_cursor_pt_do_move = false;
+  }
+  else if (ud_cursor_pts.size() > 0) {
+    menu_handler.setCheckState( handle, MenuHandler::CHECKED );
+    ud_cursor_pt_do_move = true;
+  }
+
+  menu_handler.reApply( *server );
+  //  ros::Duration(2.0).sleep();
+  //  ROS_INFO("update");
+  server->applyChanges();
+
+  send_ud_cursor_point_markers();
+
 }
 
 //----------------------------------------------------------------------------
@@ -552,9 +646,46 @@ void DisplayIndicesCb( const visualization_msgs::InteractiveMarkerFeedbackConstP
 
 //----------------------------------------------------------------------------
 
+// set flag to draw line segments connecting ud_cursor point spheres
+
+void DisplayConnectionsCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  MenuHandler::EntryHandle handle = feedback->menu_entry_id;
+  MenuHandler::CheckState state;
+  menu_handler.getCheckState( handle, state );
+
+  if ( state == MenuHandler::CHECKED ) {
+    menu_handler.setCheckState( handle, MenuHandler::UNCHECKED );
+    ud_cursor_pt_display_connections = false;
+  }
+  else {
+    menu_handler.setCheckState( handle, MenuHandler::CHECKED );
+    ud_cursor_pt_display_connections = true;
+  }
+
+  menu_handler.reApply( *server );
+  //  ros::Duration(2.0).sleep();
+  //  ROS_INFO("update");
+  server->applyChanges();
+
+  send_ud_cursor_point_markers();
+
+}
+
+//----------------------------------------------------------------------------
+
 void initMenu()
 {
   MenuHandler::EntryHandle entry;
+
+  // MOVE
+
+  h_move_entry = menu_handler.insert( "Move selected point", &MoveSelectedCb );
+
+  if (ud_cursor_pt_do_move)
+    menu_handler.setCheckState( h_move_entry, MenuHandler::CHECKED );
+  else
+    menu_handler.setCheckState( h_move_entry, MenuHandler::UNCHECKED );
 
   // DELETION
 
@@ -578,6 +709,8 @@ void initMenu()
 
   entry = menu_handler.insert( h_estimate_entry, "Line", &EstimateLineCb);
   entry = menu_handler.insert( h_estimate_entry, "Plane", &EstimatePlaneCb );
+  entry = menu_handler.insert( h_estimate_entry, "(+) inlier distance thresh", &IncreaseInlierDistanceThreshCb );
+  entry = menu_handler.insert( h_estimate_entry, "(-) inlier distance thresh", &DecreaseInlierDistanceThreshCb );
 
   // DISPLAY
 
@@ -588,6 +721,13 @@ void initMenu()
     menu_handler.setCheckState( entry, MenuHandler::CHECKED );
   else
     menu_handler.setCheckState( entry, MenuHandler::UNCHECKED );
+
+  entry = menu_handler.insert( h_display_entry, "Connections", &DisplayConnectionsCb);
+  if (ud_cursor_pt_display_connections)
+    menu_handler.setCheckState( entry, MenuHandler::CHECKED );
+  else
+    menu_handler.setCheckState( entry, MenuHandler::UNCHECKED );
+
 
 }
 
@@ -1032,17 +1172,39 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
   P.x = msg.point.x;
   P.y = msg.point.y;
   P.z = msg.point.z;
-  
-  if (!check_selected(P, ud_cursor_pt_selection_index)) {
 
-    ud_cursor_pts.push_back(P);
+  if (ud_cursor_pt_do_move) {
 
-    // last point added is automatically selected
+    ud_cursor_pts[ud_cursor_pt_selection_index] = P;
 
-    ud_cursor_pt_selection_index = ud_cursor_pts.size() - 1;
   }
   else {
-    //    printf("selected %i!\n", ud_cursor_pt_selection_index);
+    if (!check_selected(P, ud_cursor_pt_selection_index)) {
+      
+      //    ud_cursor_pts.push_back(P);
+      ud_cursor_pt_selection_index++;
+      ud_cursor_pts.insert(ud_cursor_pts.begin() + ud_cursor_pt_selection_index, P);
+      
+      // last point added is automatically selected
+      
+      //    ud_cursor_pt_selection_index = ud_cursor_pts.size() - 1;
+
+      if (ud_cursor_pt_selection_index == 0) {
+
+	geometry_msgs::Pose pose;
+ 
+	pose.position.x = P.x + 5.0*ud_cursor_pt_radius;
+	pose.position.y = P.y + 5.0*ud_cursor_pt_radius;
+	pose.position.z = P.z + 5.0*ud_cursor_pt_radius;
+
+	server->setPose( "marker1", pose );
+	server->applyChanges();
+
+      }
+    }
+    else {
+      //    printf("selected %i!\n", ud_cursor_pt_selection_index);
+    }
   }
 
   //  printf("add: %i points\n", ud_cursor_pts.size());
@@ -1287,10 +1449,7 @@ int main( int argc, char** argv )
   initMenu();
 
   makeMenuMarker( "marker1" );
-  // makeMenuMarker( "marker2" );
-
   menu_handler.apply( *server, "marker1" );
-  // menu_handler.apply( *server, "marker2" );
   server->applyChanges();
 
    nhp= new ros::NodeHandle();
