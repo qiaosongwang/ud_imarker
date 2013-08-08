@@ -570,11 +570,11 @@ pub.publish (cloud_filtered);
 
 //This function returns downsampled pointcloud and convert it to pcl::PolygonMesh, needs another panel to define
 //saving path for the mesh file, and mesh reconstruction parameters.
-sensor_msgs::PointCloud2::Ptr click_pt2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
+void click_pt2mesh_triangulation(sensor_msgs::PointCloud2::Ptr rawpt)
 {
 
 
-///////////////////Voxel filter///////////////////////////////////
+//Voxel filter
 
 // Load input file into a PointCloud<T> with an appropriate type
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
@@ -600,15 +600,14 @@ sensor_msgs::PointCloud2::Ptr click_pt2mesh(sensor_msgs::PointCloud2::Ptr rawpt)
   sor.filter (*output);
 
  //For testing
- pcl::PCDWriter writer;
- writer.write ("./downsampled.pcd", *output,
-       Eigen::Vector4f::Zero (), Eigen::Quaternionf::Identity (), false);
+  pcl::PCDWriter writer;
+  writer.write ("./downsampled.pcd", *output, Eigen::Vector4f::Zero (), Eigen::Quaternionf::Identity (), false);
 
-printf("Downsampling completed!\n");
+//Downsampling completed!
 
-cloud_blob=*output;
+  cloud_blob=*output;
 
-///////////////////Moving Least Squares smooth on downsampled pointcloud///////////////////////////////////
+//Moving Least Squares smooth on downsampled pointcloud
 
 
   pcl::io::loadPCDFile ("./downsampled.pcd", *cloud);
@@ -636,76 +635,117 @@ cloud_blob=*output;
   pcl::io::savePCDFile ("./smoothed.pcd", mls_points);
 
 
-///////////////////Mesh reconstruction by fast triangulation///////////////////////////////////
+//Mesh reconstruction by fast triangulation
 
 
 //Comment this line to disable smooth
-pcl::io::loadPCDFile ("./smoothed.pcd", cloud_blob);
-pcl::fromROSMsg (cloud_blob, *cloud);
+  pcl::io::loadPCDFile ("./smoothed.pcd", cloud_blob);
+  pcl::fromROSMsg (cloud_blob, *cloud);
 
 
 //* the data should be available in cloud
 // Normal estimation*
-pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> n;
-pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
-pcl::search::KdTree<pcl::PointXYZ>::Ptr tree2 (new pcl::search::KdTree<pcl::PointXYZ>);
-tree->setInputCloud (cloud);
-n.setInputCloud (cloud);
-n.setSearchMethod (tree2);
-n.setKSearch (20);
-n.compute (*normals);
+	pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> n;
+	pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
+	pcl::search::KdTree<pcl::PointXYZ>::Ptr tree2 (new pcl::search::KdTree<pcl::PointXYZ>);
+	tree->setInputCloud (cloud);
+	n.setInputCloud (cloud);
+	n.setSearchMethod (tree2);
+	n.setKSearch (20);
+	n.compute (*normals);
 //* normals should not contain the point normals + surface curvatures
 
 // Concatenate the XYZ and normal fields*
-pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals (new pcl::PointCloud<pcl::PointNormal>);
-pcl::concatenateFields (*cloud, *normals, *cloud_with_normals);
+	pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals (new pcl::PointCloud<pcl::PointNormal>);
+	pcl::concatenateFields (*cloud, *normals, *cloud_with_normals);
 //* cloud_with_normals = cloud + normals
 
 // Create search tree*
-pcl::search::KdTree<pcl::PointNormal>::Ptr tree3 (new pcl::search::KdTree<pcl::PointNormal>);
-tree3->setInputCloud (cloud_with_normals);
+	pcl::search::KdTree<pcl::PointNormal>::Ptr tree3 (new pcl::search::KdTree<pcl::PointNormal>);
+	tree3->setInputCloud (cloud_with_normals);
 
 // Initialize objects
-pcl::GreedyProjectionTriangulation<pcl::PointNormal> gp3;
-pcl::PolygonMesh triangles;
+	pcl::GreedyProjectionTriangulation<pcl::PointNormal> gp3;
+	pcl::PolygonMesh triangles;
 
 // Set the maximum distance between connected points (maximum edge length)
-gp3.setSearchRadius (3);
+	gp3.setSearchRadius (3);
 
 // Set typical values for the parameters
-gp3.setMu (3);
-gp3.setMaximumNearestNeighbors (300);
-gp3.setMaximumSurfaceAngle(M_PI/4); // 45 degrees
-gp3.setMinimumAngle(M_PI/18); // 10 degrees
-gp3.setMaximumAngle(2*M_PI/3); // 120 degrees
-gp3.setNormalConsistency(false);
+	gp3.setMu (3);
+	gp3.setMaximumNearestNeighbors (300);
+	gp3.setMaximumSurfaceAngle(M_PI/4); // 45 degrees
+	gp3.setMinimumAngle(M_PI/18); // 10 degrees
+	gp3.setMaximumAngle(2*M_PI/3); // 120 degrees
+	gp3.setNormalConsistency(false);
 
 // Get result
-gp3.setInputCloud (cloud_with_normals);
-gp3.setSearchMethod (tree3);
-gp3.reconstruct (triangles);
+	gp3.setInputCloud (cloud_with_normals);
+	gp3.setSearchMethod (tree3);
+	gp3.reconstruct (triangles);
 
 // Additional vertex information
-std::vector<int> parts = gp3.getPartIDs();
-std::vector<int> states = gp3.getPointStates();
+	std::vector<int> parts = gp3.getPartIDs();
+	std::vector<int> states = gp3.getPointStates();
 
-//For testing
-pcl::io::saveVTKFile("mesh.vtk",triangles);
-
-
- //PointCloud<PointXYZ>::Ptr cloud (new PointCloud<PointXYZ>);
+//For testing (save mesh files)
+	pcl::io::saveVTKFile("mesh.vtk",triangles);
 
 
+}
 
-      cout << "loaded" << endl;
+//----------------------------------------------------------------------------
 
-      cout << "begin passthrough filter" << endl;
+void click_pt2mesh_poisson(sensor_msgs::PointCloud2::Ptr rawpt)
+{
+
+//Voxel filter
+
+// Load input file into a PointCloud<T> with an appropriate type
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
+
+
+  sensor_msgs::PointCloud2 cloud_blob;
+  sensor_msgs::PointCloud2::Ptr input (new sensor_msgs::PointCloud2 ());
+  sensor_msgs::PointCloud2::Ptr output (new sensor_msgs::PointCloud2 ());
+
+
+  input= rawpt;
+
+ //For testing
+
+ // pcl::PCDReader reader;
+ 
+ // reader.read ("./armory_stairs1_hokuyo.pcd", *input);
+
+
+  pcl::VoxelGrid<sensor_msgs::PointCloud2> sor;
+  sor.setInputCloud (input);
+  sor.setLeafSize (0.1, 0.1, 0.1);
+  sor.filter (*output);
+
+ //For testing
+  pcl::PCDWriter writer;
+  writer.write ("./downsampled.pcd", *output, Eigen::Vector4f::Zero (), Eigen::Quaternionf::Identity (), false);
+
+//Downsampling completed
+
+	cloud_blob=*output;
+
+  pcl::io::loadPCDFile ("./downsampled.pcd", *cloud);
+
+//PointCloud<PointXYZ>::Ptr cloud (new PointCloud<PointXYZ>);
+
+
+//Begin passthrough filter
+//Pointcloud loaded
       PointCloud<PointXYZ>::Ptr filtered(new PointCloud<PointXYZ>());
       PassThrough<PointXYZ> filter;
       filter.setInputCloud(cloud);
       filter.filter(*filtered);
-      cout << "passthrough filter complete" << endl;
+//Passthrough filter complete
 
+//Uncomment if you want to do mls smoothing
       // cout << "begin moving least squares" << endl;
       // MovingLeastSquares<PointXYZ, PointXYZ> mls;
       // mls.setInputCloud(filtered);
@@ -720,7 +760,7 @@ pcl::io::saveVTKFile("mesh.vtk",triangles);
       // mls.process(*cloud_smoothed);
       // cout << "MLS complete" << endl;
 
-      cout << "begin normal estimation" << endl;
+//Begin normal estimation
       NormalEstimationOMP<PointXYZ, Normal> ne;
       ne.setNumberOfThreads(8);
       ne.setInputCloud(filtered);
@@ -731,8 +771,10 @@ pcl::io::saveVTKFile("mesh.vtk",triangles);
 
       PointCloud<Normal>::Ptr cloud_normals (new PointCloud<Normal>());
       ne.compute(*cloud_normals);
-      cout << "normal estimation complete" << endl;
-      cout << "reverse normals' direction" << endl;
+
+//Normal estimation complete
+
+//Reverse normals' direction
 
       for(size_t i = 0; i < cloud_normals->size(); ++i){
        cloud_normals->points[i].normal_x *= -1;
@@ -740,22 +782,19 @@ pcl::io::saveVTKFile("mesh.vtk",triangles);
        cloud_normals->points[i].normal_z *= -1;
       }
 
-      cout << "combine points and normals" << endl;
+//Combine points and normals
       PointCloud<PointNormal>::Ptr cloud_smoothed_normals(new PointCloud<PointNormal>());
       concatenateFields(*filtered, *cloud_normals, *cloud_smoothed_normals);
 
-      cout << "begin poisson reconstruction" << endl;
+//Begin poisson reconstruction
       Poisson<PointNormal> poisson;
       poisson.setDepth(9);
       poisson.setInputCloud(cloud_smoothed_normals);
       PolygonMesh mesh;
       poisson.reconstruct(mesh);
-
+//Save mesh file
       io::savePLYFile("poisson", mesh);
 
-
-
-return output;
 }
 
 //----------------------------------------------------------------------------
