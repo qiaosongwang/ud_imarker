@@ -928,7 +928,8 @@ void click_pt2mesh_triangulation(sensor_msgs::PointCloud2::Ptr rawpt)
 	std::vector<int> states = gp3.getPointStates();
 
 //For testing (save mesh files)
-	pcl::io::saveVTKFile("mesh.vtk",triangles);
+        //pcl::io::savePLYFile("trangulation.ply", mesh);
+	pcl::io::saveVTKFile("trangulation.vtk",triangles);
 
 
 }
@@ -961,7 +962,7 @@ void click_pt2mesh_poisson(sensor_msgs::PointCloud2::Ptr rawpt)
 
   pcl::VoxelGrid<sensor_msgs::PointCloud2> sor;
   sor.setInputCloud (input);
-  sor.setLeafSize (0.1, 0.1, 0.1);
+  sor.setLeafSize (0.001, 0.001, 0.001);
   sor.filter (*output);
 
  //For testing
@@ -1028,12 +1029,13 @@ void click_pt2mesh_poisson(sensor_msgs::PointCloud2::Ptr rawpt)
 
 //Begin poisson reconstruction
   Poisson<PointNormal> poisson;
-  poisson.setDepth(9);
+  poisson.setDepth(10);
   poisson.setInputCloud(cloud_smoothed_normals);
   PolygonMesh mesh;
   poisson.reconstruct(mesh);
 //Save mesh file
-  io::savePLYFile("poisson", mesh);
+  //io::savePLYFile("poisson.ply", mesh);
+  pcl::io::saveVTKFile("poisson.vtk",mesh);
 
 }
 
@@ -1104,7 +1106,8 @@ void click_pt2mesh_cube(sensor_msgs::PointCloud2::Ptr rawpt)
   mc.setSearchMethod (tree);
   mc.reconstruct (*triangles);
 //Save mesh file
-  io::savePLYFile("cube", *triangles);
+  //io::savePLYFile("cube.ply", *triangles);
+  io::saveVTKFile("cube.vtk", *triangles);
 }
 
 
