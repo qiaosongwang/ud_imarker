@@ -367,6 +367,25 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
 {
   if (ud_cursor_pts.size() < 2)
     printf("need at least 2 points to parametrize a line\n");
+  if (ud_cursor_pts.size() == 2)
+  {
+	  //directly find the parametric form of a line
+	  
+	  double dx, dy, dz;
+	  
+      dx = ud_cursor_pts[1].x - ud_cursor_pts[0].x;
+      dy = ud_cursor_pts[1].y - ud_cursor_pts[0].y;
+      dz = ud_cursor_pts[1].z - ud_cursor_pts[0].z;
+      
+      cout << "The line equation is: " << endl;
+      cout << "x = " << ud_cursor_pts[0].x << " + " << dx << "t" << endl;
+      cout << "y = " << ud_cursor_pts[0].y << " + " << dy << "t" << endl;
+      cout << "z = " << ud_cursor_pts[0].z << " + " << dz << "t" << endl;
+	  
+  }
+  if( ud_cursor_pts.size() > 2 )
+    cout << "Not yet implemented" << endl;
+  
 }
 
 //----------------------------------------------------------------------------
