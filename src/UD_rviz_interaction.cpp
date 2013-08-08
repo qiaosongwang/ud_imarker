@@ -11,42 +11,56 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/PointStamped.h>
+//----------------------------------------------------------------------------
 
 #include <interactive_markers/interactive_marker_server.h>
 #include <interactive_markers/menu_handler.h>
+//----------------------------------------------------------------------------
 
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/vtk_io.h>
 #include <pcl/io/ply_io.h>
+//----------------------------------------------------------------------------
+
 #include <pcl/ros/conversions.h>
+//----------------------------------------------------------------------------
+
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/surface/gp3.h>
+//----------------------------------------------------------------------------
+
 #include <pcl/kdtree/kdtree_flann.h>
-#include <pcl/features/normal_3d.h>
+#include <pcl/search/kdtree.h>
+//----------------------------------------------------------------------------
+
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/passthrough.h>
+//----------------------------------------------------------------------------
+
 #include <pcl/sample_consensus/method_types.h>
 #include <pcl/sample_consensus/model_types.h>
 #include <pcl/sample_consensus/sac_model_plane.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/ModelCoefficients.h>
-#include <pcl/kdtree/kdtree_flann.h>
-#include <pcl/surface/mls.h>
+//----------------------------------------------------------------------------
 
-#include <pcl/search/kdtree.h>
+#include <pcl/features/normal_3d.h>
 #include <pcl/features/normal_3d_omp.h>
+//----------------------------------------------------------------------------
 
+#include <pcl/surface/mls.h>
+#include <pcl/surface/gp3.h>
 #include <pcl/surface/poisson.h>
-#include <pcl/filters/passthrough.h>
+#include <pcl/surface/marching_cubes_rbf.h>
+//----------------------------------------------------------------------------
 
 #include <boost/foreach.hpp>
 #include <boost/bind.hpp>
+//----------------------------------------------------------------------------
 
 #include <cmath>
 #include <vector>
 #include <math.h>
-
 //----------------------------------------------------------------------------
 
 typedef pcl::PointXYZRGBA PointT;
@@ -367,25 +381,6 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
 {
   if (ud_cursor_pts.size() < 2)
     printf("need at least 2 points to parametrize a line\n");
-  if (ud_cursor_pts.size() == 2)
-  {
-	  //directly find the parametric form of a line
-	  
-	  double dx, dy, dz;
-	  
-      dx = ud_cursor_pts[1].x - ud_cursor_pts[0].x;
-      dy = ud_cursor_pts[1].y - ud_cursor_pts[0].y;
-      dz = ud_cursor_pts[1].z - ud_cursor_pts[0].z;
-      
-      cout << "The line equation is: " << endl;
-      cout << "x = " << ud_cursor_pts[0].x << " + " << dx << "t" << endl;
-      cout << "y = " << ud_cursor_pts[0].y << " + " << dy << "t" << endl;
-      cout << "z = " << ud_cursor_pts[0].z << " + " << dz << "t" << endl;
-	  
-  }
-  if( ud_cursor_pts.size() > 2 )
-    cout << "Not yet implemented" << endl;
-  
 }
 
 //----------------------------------------------------------------------------
@@ -568,8 +563,9 @@ pub.publish (cloud_filtered);
 
 //----------------------------------------------------------------------------
 
-//This function returns downsampled pointcloud and convert it to pcl::PolygonMesh, needs another panel to define
+//This function downsamples the pointcloud and converts it to pcl::PolygonMesh using fast trangulation, needs another panel to define
 //saving path for the mesh file, and mesh reconstruction parameters.
+
 void click_pt2mesh_triangulation(sensor_msgs::PointCloud2::Ptr rawpt)
 {
 
@@ -608,7 +604,6 @@ void click_pt2mesh_triangulation(sensor_msgs::PointCloud2::Ptr rawpt)
   cloud_blob=*output;
 
 //Moving Least Squares smooth on downsampled pointcloud
-
 
   pcl::io::loadPCDFile ("./downsampled.pcd", *cloud);
   // Create a KD-Tree
@@ -696,6 +691,7 @@ void click_pt2mesh_triangulation(sensor_msgs::PointCloud2::Ptr rawpt)
 
 //----------------------------------------------------------------------------
 
+//This function downsamples the pointcloud and converts it to mesh using poisson surface reconstruction
 void click_pt2mesh_poisson(sensor_msgs::PointCloud2::Ptr rawpt)
 {
 
@@ -796,6 +792,77 @@ void click_pt2mesh_poisson(sensor_msgs::PointCloud2::Ptr rawpt)
       io::savePLYFile("poisson", mesh);
 
 }
+
+
+//----------------------------------------------------------------------------
+//This function downsamples the pointcloud and converts it to mesh using matching cube algorithm
+void click_pt2mesh_cube(sensor_msgs::PointCloud2::Ptr rawpt)
+{
+//Voxel filter
+
+// Load input file into a PointCloud<T> with an appropriate type
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
+
+
+  sensor_msgs::PointCloud2 cloud_blob;
+  sensor_msgs::PointCloud2::Ptr input (new sensor_msgs::PointCloud2 ());
+  sensor_msgs::PointCloud2::Ptr output (new sensor_msgs::PointCloud2 ());
+
+
+  input= rawpt;
+
+ //For testing
+
+ // pcl::PCDReader reader;
+ 
+ // reader.read ("./armory_stairs1_hokuyo.pcd", *input);
+
+
+  pcl::VoxelGrid<sensor_msgs::PointCloud2> sor;
+  sor.setInputCloud (input);
+  sor.setLeafSize (0.1, 0.1, 0.1);
+  sor.filter (*output);
+
+ //For testing
+  pcl::PCDWriter writer;
+  writer.write ("./downsampled.pcd", *output, Eigen::Vector4f::Zero (), Eigen::Quaternionf::Identity (), false);
+
+//Downsampling completed
+
+	cloud_blob=*output;
+
+  pcl::io::loadPCDFile ("./downsampled.pcd", *cloud);
+
+//Pointcloud loaded
+
+    NormalEstimationOMP<PointXYZ, Normal> ne;
+    search::KdTree<PointXYZ>::Ptr tree1 (new search::KdTree<PointXYZ>);
+    tree1->setInputCloud (cloud);
+    ne.setInputCloud (cloud);
+    ne.setSearchMethod (tree1);
+    ne.setKSearch (20);
+    PointCloud<Normal>::Ptr normals (new PointCloud<Normal>);
+    ne.compute (*normals);
+         
+// Concatenate the XYZ and normal fields
+    PointCloud<PointNormal>::Ptr cloud_with_normals (new PointCloud<PointNormal>);
+    concatenateFields(*cloud, *normals, *cloud_with_normals);
+ 
+// Create search tree
+    search::KdTree<PointNormal>::Ptr tree (new search::KdTree<PointNormal>);
+    tree->setInputCloud (cloud_with_normals);
+    
+//Begin marching cubes reconstruction
+
+    MarchingCubesRBF<PointNormal> mc;
+    PolygonMesh::Ptr triangles(new PolygonMesh);
+    mc.setInputCloud (cloud_with_normals);
+    mc.setSearchMethod (tree);
+    mc.reconstruct (*triangles);
+//Save mesh file
+      io::savePLYFile("cube", *triangles);
+}
+
 
 //----------------------------------------------------------------------------
 
