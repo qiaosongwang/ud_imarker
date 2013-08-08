@@ -822,7 +822,7 @@ void click_pt2mesh_poisson(sensor_msgs::PointCloud2::Ptr rawpt)
 
   pcl::VoxelGrid<sensor_msgs::PointCloud2> sor;
   sor.setInputCloud (input);
-  sor.setLeafSize (0.1, 0.1, 0.1);
+  sor.setLeafSize (0.001, 0.001, 0.001);
   sor.filter (*output);
 
  //For testing
@@ -889,7 +889,7 @@ void click_pt2mesh_poisson(sensor_msgs::PointCloud2::Ptr rawpt)
 
 //Begin poisson reconstruction
   Poisson<PointNormal> poisson;
-  poisson.setDepth(9);
+  poisson.setDepth(10);
   poisson.setInputCloud(cloud_smoothed_normals);
   PolygonMesh mesh;
   poisson.reconstruct(mesh);
