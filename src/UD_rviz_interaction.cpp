@@ -52,7 +52,7 @@ typedef pcl::PointCloud<PointT> PointCloudT;
 using namespace std;
 using namespace visualization_msgs;
 using namespace interactive_markers;
-
+using namespace pcl;
 //----------------------------------------------------------------------------
 
 boost::shared_ptr<InteractiveMarkerServer> server;
@@ -672,6 +672,7 @@ pcl::io::saveVTKFile("mesh.vtk",triangles);
  //PointCloud<PointXYZ>::Ptr cloud (new PointCloud<PointXYZ>);
 
 
+/*
       cout << "loaded" << endl;
 
       cout << "begin passthrough filter" << endl;
@@ -728,7 +729,7 @@ pcl::io::saveVTKFile("mesh.vtk",triangles);
 
       io::savePLYFile("poisson", mesh);
 
-
+*/
 
 return output;
 }
