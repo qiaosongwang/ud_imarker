@@ -88,12 +88,18 @@ MenuHandler::EntryHandle h_move_entry;
 MenuHandler::EntryHandle h_delete_entry;
 MenuHandler::EntryHandle h_measure_entry;
 MenuHandler::EntryHandle h_estimate_entry;
+MenuHandler::EntryHandle h_crop_entry;
 MenuHandler::EntryHandle h_display_entry;
 
 MenuHandler::EntryHandle h_mode_last;
 
 //changing modes
 int workmode = 0; //0- distance, 1 polyline mode 2 box selection 3- select 3 points to find a plane
+
+//global points
+Eigen::Vector4f minPoint;
+Eigen::Vector4f maxPoint;
+ 
 
 
 double ransac_inlier_distance_threshold = 0.05;
@@ -591,6 +597,43 @@ void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
 }
 
 //----------------------------------------------------------------------------
+// Crop the pointcloud and republish to ud_output
+void CropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+
+
+  if (ud_cursor_pts.size() != 2)
+    printf("need 2 points to parametrize a cropbox\n");
+  else
+    {
+    minPoint[0]=ud_cursor_pts[0].x; 
+    minPoint[1]=ud_cursor_pts[0].y; 
+    minPoint[2]=ud_cursor_pts[0].z; 
+
+    maxPoint[0]=ud_cursor_pts[1].x+1; 
+    maxPoint[1]=ud_cursor_pts[1].y+1; 
+    maxPoint[2]=ud_cursor_pts[1].z+1;  
+    
+		std::cout << "Max x: " << maxPoint[0] << std::endl;
+		std::cout << "Max y: " << maxPoint[1] << std::endl;
+		std::cout << "Max z: " << maxPoint[2] << std::endl;
+		std::cout << "Min x: " << minPoint[0] << std::endl;
+		std::cout << "Min y: " << minPoint[1] << std::endl;
+		std::cout << "Min z: " << minPoint[2] << std::endl;
+    }
+}
+//----------------------------------------------------------------------------
+void UndoCropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+    minPoint[0]=-999; 
+    minPoint[1]=-999; 
+    minPoint[2]=-999; 
+
+    maxPoint[0]=999; 
+    maxPoint[1]=999; 
+    maxPoint[2]=999;  
+
+}
 
 // set flag to interpret next click as movement of selected point rather than addition of new point
 
@@ -714,6 +757,11 @@ void initMenu()
   entry = menu_handler.insert( h_estimate_entry, "(+) inlier distance thresh", &IncreaseInlierDistanceThreshCb );
   entry = menu_handler.insert( h_estimate_entry, "(-) inlier distance thresh", &DecreaseInlierDistanceThreshCb );
 
+  // Crop
+
+  h_crop_entry = menu_handler.insert( "Crop..." );
+  entry = menu_handler.insert( h_crop_entry, "Crop pointcloud", &CropCb);
+  entry = menu_handler.insert( h_crop_entry, "Undo", &UndoCropCb);
   // DISPLAY
 
   h_display_entry = menu_handler.insert( "Display..." );
@@ -751,11 +799,24 @@ void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 
 
   // Convert the sensor_msgs/PointCloud2 data to pcl/PointCloud
-  pcl::PointCloud<pcl::PointXYZ> cloud;
-  pcl::fromROSMsg (*input, cloud);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
+	cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::fromROSMsg (*input, *cloud);
+
+  //do data processing
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr ptr_cloud_cropped;
+	ptr_cloud_cropped = pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
+
+	pcl::CropBox<pcl::PointXYZ> cropFilter;
+	cropFilter.setInputCloud (cloud);
+
+	cropFilter.setMin(minPoint);
+	cropFilter.setMax(maxPoint);
+	cropFilter.filter (*ptr_cloud_cropped);  
 
   // Publish the data
-  ptcloud_pub.publish (cloud);
+  ptcloud_pub.publish (*ptr_cloud_cropped);
 
 /*
 pcl::fromROSMsg(*input, rviz_pt);
@@ -776,38 +837,6 @@ cloud_filtered.header.frame_id = input->header.frame_id;
 pub.publish (cloud_filtered);
 
 */
-}
-
-
-//----------------------------------------------------------------------------
-
-//Give input pointcloud, max point and min point to crop the pointcloud, currently cannot rotate the cropbox
-pcl::PointCloud<pcl::PointXYZ>::Ptr CropboxCb( pcl::PointCloud<pcl::PointXYZ>::Ptr input, Eigen::Vector4f min, Eigen::Vector4f max )
-{
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
-  cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
-  cloud=input;
-
-  pcl::PointCloud<pcl::PointXYZ>::Ptr ptr_cloud_square;
-	ptr_cloud_square = pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
-
-	pcl::CropBox<pcl::PointXYZ> cropFilter;
-	cropFilter.setInputCloud (cloud);
-
-	Eigen::Vector4f minPoint;
-	minPoint[0]=min[0];  // define minimum point x
-	minPoint[1]=min[1];  // define minimum point y
-	minPoint[2]=min[2];  // define minimum point z
-	Eigen::Vector4f maxPoint;
-	maxPoint[0]=max[0];  // define max point x
-	maxPoint[1]=max[1];  // define max point y
-	maxPoint[2]=max[2];  // define max point z
-
-	cropFilter.setMin(minPoint);
-	cropFilter.setMax(maxPoint);
-	cropFilter.filter (*ptr_cloud_square);     
-	return ptr_cloud_square;
-
 }
 
 //----------------------------------------------------------------------------
@@ -1448,6 +1477,14 @@ int main( int argc, char** argv )
   cp.x=pp.x=0;
   cp.y=pp.y=0;
   cp.z=pp.z=0;
+
+  minPoint[0]=-999; 
+  minPoint[1]=-999; 
+  minPoint[2]=-999; 
+
+  maxPoint[0]=999; 
+  maxPoint[1]=999; 
+  maxPoint[2]=999;  
 
   printf("ud_imarker server starting\n"); fflush(stdout);
 
