@@ -22,8 +22,9 @@
 #include <pcl/io/vtk_io.h>
 #include <pcl/io/ply_io.h>
 //----------------------------------------------------------------------------
-
+#include <pcl_ros/point_cloud.h>
 #include <pcl/ros/conversions.h>
+
 //----------------------------------------------------------------------------
 
 #include <pcl/point_cloud.h>
@@ -111,6 +112,7 @@ float globalscale = 1;  //What are the units on this? -Brad
 geometry_msgs::Point fp; //future point
 geometry_msgs::Point cp; //current point
 geometry_msgs::Point pp; //previous point
+
 
 //Number of points, need to be dynamically assiagned once the panel is done
 //int num_polypoints=100;
@@ -747,10 +749,13 @@ float calc_cp_dist(int i, vector<vector<float> > polypoints)
 void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 {
 
-  //do the pointcloud processing
-  sensor_msgs::PointCloud2 output= *input;
+
+  // Convert the sensor_msgs/PointCloud2 data to pcl/PointCloud
+  pcl::PointCloud<pcl::PointXYZ> cloud;
+  pcl::fromROSMsg (*input, cloud);
+
   // Publish the data
-  ptcloud_pub.publish (output);
+  ptcloud_pub.publish (cloud);
 
 /*
 pcl::fromROSMsg(*input, rviz_pt);
@@ -1461,14 +1466,14 @@ int main( int argc, char** argv )
 
   marker_pub = nhp->advertise<visualization_msgs::Marker>("visualization_marker", 10);
   marker_array_pub = nhp->advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 10);
-  ptcloud_pub = nhp->advertise<sensor_msgs::PointCloud2> ("ud_output", 1);
+  ptcloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("ud_output", 1);
 
   // Subscribers
 
   click_sub = nhp->subscribe("ud_clicked_point", 10, clickCallback);
 
   ptcloud_sub = nhp->subscribe("cloud_pcd", 10, ptcloudCallback);
-
+  
 
   ros::Rate UD_rviz_interaction_rate(30);
 
