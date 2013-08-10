@@ -130,7 +130,7 @@ include_directories(include
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
-add_executable(UD_rviz_interaction src/UD_rviz_interaction.cpp)
+add_executable(UD_rviz_interaction src/UD_rviz_interaction.cpp src/ud_pcl_utils.cpp)
 target_link_libraries(UD_rviz_interaction ${catkin_LIBRARIES})
-add_executable(UD_iMarker src/UD_iMarker.cpp)
-target_link_libraries(UD_iMarker ${catkin_LIBRARIES})
+#add_executable(UD_iMarker src/UD_iMarker.cpp)
+#target_link_libraries(UD_iMarker ${catkin_LIBRARIES})

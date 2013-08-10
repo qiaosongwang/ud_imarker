@@ -32,7 +32,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: PointCloud2
+    SyncSource: cloud_pcd
 Visualization Manager:
   Class: ""
   Displays:
@@ -40,7 +40,7 @@ Visualization Manager:
       Cell Size: 1
       Class: rviz/Grid
       Color: 160; 160; 164
-      Enabled: true
+      Enabled: false
       Line Style:
         Line Width: 0.03
         Value: Billboards
@@ -53,7 +53,7 @@ Visualization Manager:
       Plane: XY
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
-      Value: true
+      Value: false
     - Class: rviz/InteractiveMarkers
       Enable Transparency: true
       Enabled: true
@@ -76,7 +76,7 @@ Visualization Manager:
       Marker Topic: visualization_marker_array
       Name: MarkerArray
       Namespaces:
-        UD_rviz_interaction: true
+        {}
       Queue Size: 100
       Value: true
     - Alpha: 1
@@ -96,7 +96,7 @@ Visualization Manager:
       Max Intensity: 4569
       Min Color: 0; 0; 0
       Min Intensity: 30
-      Name: PointCloud2
+      Name: cloud_pcd
       Position Transformer: XYZ
       Queue Size: 10
       Selectable: true
@@ -107,6 +107,34 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: false
       Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color: 0; 0; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.01
+      Style: Flat Squares
+      Topic: /ud_output
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -138,10 +166,10 @@ Visualization Manager:
         Z: 0.571165
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.489794
+      Pitch: 0.724797
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.21043
+      Yaw: 2.34041
     Saved: ~
 Window Geometry:
   Displays:
@@ -159,5 +187,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1360
-  X: 424
-  Y: 59
+  X: 478
+  Y: 93

@@ -5,79 +5,32 @@
 
 //----------------------------------------------------------------------------
 
-#include <ros/ros.h>
-#include <visualization_msgs/Marker.h>
-#include <visualization_msgs/MarkerArray.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <std_msgs/String.h>
-#include <geometry_msgs/PointStamped.h>
-//----------------------------------------------------------------------------
+#include "ud_imarker.hh"
 
-#include <interactive_markers/interactive_marker_server.h>
-#include <interactive_markers/menu_handler.h>
+// rosrun pcl_ros pcd_to_pointcloud golfcart_pillar1_hokuyo.pcd 1
 
 //----------------------------------------------------------------------------
 
-#include <pcl/io/pcd_io.h>
-#include <pcl/io/vtk_io.h>
-#include <pcl/io/ply_io.h>
-//----------------------------------------------------------------------------
-#include <pcl_ros/point_cloud.h>
-#include <pcl/ros/conversions.h>
+// this should change with menu selection
+
+bool do_crop = false;
 
 //----------------------------------------------------------------------------
 
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-//----------------------------------------------------------------------------
+pcl::PointCloud<pcl::PointXYZ>::Ptr cursor_cloudptr;
 
-#include <pcl/kdtree/kdtree_flann.h>
-#include <pcl/search/kdtree.h>
-//----------------------------------------------------------------------------
+pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloudptr;
 
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/filters/passthrough.h>
-#include <pcl/filters/crop_box.h>
-//----------------------------------------------------------------------------
+pcl::PointCloud<pcl::PointXYZ>::Ptr input_cropped_cloudptr;
 
-#include <pcl/sample_consensus/method_types.h>
-#include <pcl/sample_consensus/model_types.h>
-#include <pcl/sample_consensus/sac_model_plane.h>
-#include <pcl/segmentation/sac_segmentation.h>
-#include <pcl/ModelCoefficients.h>
-//----------------------------------------------------------------------------
+pcl::PointCloud<pcl::PointXYZ>::Ptr inlier_cloudptr;
+pcl::PointCloud<pcl::PointXYZ>::Ptr outlier_cloudptr;
 
-#include <pcl/features/normal_3d.h>
-#include <pcl/features/normal_3d_omp.h>
-//----------------------------------------------------------------------------
+ros::Publisher inlier_cloud_pub;
+ros::Publisher outlier_cloud_pub;
 
-#include <pcl/surface/mls.h>
-#include <pcl/surface/gp3.h>
-#include <pcl/surface/poisson.h>
-#include <pcl/surface/marching_cubes_rbf.h>
-//----------------------------------------------------------------------------
+pcl::ModelCoefficients plane_coefficients;
 
-#include <Eigen/Core>
-//----------------------------------------------------------------------------
-
-#include <boost/foreach.hpp>
-#include <boost/bind.hpp>
-//----------------------------------------------------------------------------
-
-#include <cmath>
-#include <vector>
-#include <math.h>
-//----------------------------------------------------------------------------
-
-typedef pcl::PointXYZRGBA PointT;
-typedef pcl::PointCloud<PointT> PointCloudT;
-
-//----------------------------------------------------------------------------
-
-using namespace std;
-using namespace visualization_msgs;
-using namespace interactive_markers;
-using namespace pcl;
 //----------------------------------------------------------------------------
 
 boost::shared_ptr<InteractiveMarkerServer> server;
@@ -108,7 +61,12 @@ double ransac_inlier_distance_threshold_delta = 0.01;
 //Defining ROS parameters
 ros::Publisher marker_pub;
 ros::Publisher marker_array_pub;
+
 ros::Publisher ptcloud_pub;
+
+ros::Publisher inliers_cloud_pub;
+ros::Publisher outliers_cloud_pub;
+
 ros::NodeHandle *nhp;
 ros::Subscriber click_sub;
 ros::Subscriber ptcloud_sub;
@@ -118,7 +76,6 @@ float globalscale = 1;  //What are the units on this? -Brad
 geometry_msgs::Point fp; //future point
 geometry_msgs::Point cp; //current point
 geometry_msgs::Point pp; //previous point
-
 
 //Number of points, need to be dynamically assiagned once the panel is done
 //int num_polypoints=100;
@@ -138,6 +95,20 @@ bool ud_cursor_pt_do_move = false;
 //Declare received pointcloud from RVIZ
 pcl::PointCloud< pcl::PointXYZRGB> rviz_pt;
 pcl::PointCloud< pcl::PointXYZRGB> rviz_pt_filtered;
+
+//----------------------------------------------------------------------------
+
+void initialize_pcl()
+{
+  cursor_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+
+  input_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+
+  input_cropped_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+
+  inlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+  outlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+}
 
 //----------------------------------------------------------------------------
 
@@ -535,6 +506,34 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
 
 void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
+  cursor_cloudptr->points.clear();
+
+  for (int i = 0; i < ud_cursor_pts.size(); i++)
+    cursor_cloudptr->points.push_back(ud_cursor_pts[i]);
+
+  robust_plane_fit(*cursor_cloudptr,
+		   *inlier_cloudptr,
+		   *outlier_cloudptr,
+		   plane_coefficients,
+		   ransac_inlier_distance_threshold);
+
+  plane_slice(*input_cloudptr,
+	      *inlier_cloudptr,
+	      *outlier_cloudptr,
+	      plane_coefficients,
+	      0.1);
+
+  //  pcl::toROSMsg(*inlier_cloudptr, inlier_msg);
+  inlier_cloudptr->header.frame_id = "base_link";
+  inlier_cloud_pub.publish(inlier_cloudptr);
+
+  //  pcl::toROSMsg(*outlier_cloudptr, outlier_msg);
+  //  outlier_msg.header.frame_id = "base_link";
+  outlier_cloudptr->header.frame_id = "base_link";
+  outlier_cloud_pub.publish(*outlier_cloudptr);
+
+  /*
+
   if (ud_cursor_pts.size() < 3)
     printf("need at least 3 points to parametrize a plane\n");
   
@@ -594,10 +593,24 @@ void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
  
 
 }
+  */
+
 }
 
 //----------------------------------------------------------------------------
+
+// parametrize (if n = 3) or fit (n >= 4) 3-D CIRCLE to all ud_cursor points
+
+void EstimateCircleCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+
+
+}
+
+//----------------------------------------------------------------------------
+
 // Crop the pointcloud and republish to ud_output
+
 void CropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
 
@@ -622,7 +635,9 @@ void CropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedba
 		std::cout << "Min z: " << minPoint[2] << std::endl;
     }
 }
+
 //----------------------------------------------------------------------------
+
 void UndoCropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
     minPoint[0]=-999; 
@@ -634,6 +649,8 @@ void UndoCropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &fe
     maxPoint[2]=999;  
 
 }
+
+//----------------------------------------------------------------------------
 
 // set flag to interpret next click as movement of selected point rather than addition of new point
 
@@ -754,6 +771,7 @@ void initMenu()
 
   entry = menu_handler.insert( h_estimate_entry, "Line", &EstimateLineCb);
   entry = menu_handler.insert( h_estimate_entry, "Plane", &EstimatePlaneCb );
+  entry = menu_handler.insert( h_estimate_entry, "Circle", &EstimateCircleCb );
   entry = menu_handler.insert( h_estimate_entry, "(+) inlier distance thresh", &IncreaseInlierDistanceThreshCb );
   entry = menu_handler.insert( h_estimate_entry, "(-) inlier distance thresh", &DecreaseInlierDistanceThreshCb );
 
@@ -796,27 +814,30 @@ float calc_cp_dist(int i, vector<vector<float> > polypoints)
 
 void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
 {
-
-
   // Convert the sensor_msgs/PointCloud2 data to pcl/PointCloud
+  /*
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
-	cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
+	
+  cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
+
   pcl::fromROSMsg (*input, *cloud);
+  */
+
+  pcl::fromROSMsg (*input, *input_cloudptr);
 
   //do data processing
 
-  pcl::PointCloud<pcl::PointXYZ>::Ptr ptr_cloud_cropped;
-	ptr_cloud_cropped = pcl::PointCloud<pcl::PointXYZ>::Ptr (new pcl::PointCloud<pcl::PointXYZ>);
-
-	pcl::CropBox<pcl::PointXYZ> cropFilter;
-	cropFilter.setInputCloud (cloud);
-
-	cropFilter.setMin(minPoint);
-	cropFilter.setMax(maxPoint);
-	cropFilter.filter (*ptr_cloud_cropped);  
-
-  // Publish the data
-  ptcloud_pub.publish (*ptr_cloud_cropped);
+  if (do_crop) {
+    pcl::CropBox<pcl::PointXYZ> cropFilter;
+    cropFilter.setInputCloud (input_cloudptr);
+    
+    cropFilter.setMin(minPoint);
+    cropFilter.setMax(maxPoint);
+    cropFilter.filter (*input_cropped_cloudptr);  
+    
+    // Publish the data
+    ptcloud_pub.publish (*input_cropped_cloudptr);
+  }
 
 /*
 pcl::fromROSMsg(*input, rviz_pt);
@@ -1469,6 +1490,8 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
 
 int main( int argc, char** argv )
 {
+  initialize_pcl();
+
   ud_cursor_pts.clear();
 
   fp.x=1;
@@ -1503,7 +1526,11 @@ int main( int argc, char** argv )
 
   marker_pub = nhp->advertise<visualization_msgs::Marker>("visualization_marker", 10);
   marker_array_pub = nhp->advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 10);
+
   ptcloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("ud_output", 1);
+
+  inlier_cloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("ud_inliers", 1);
+  outlier_cloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("ud_outliers", 1);
 
   // Subscribers
 
