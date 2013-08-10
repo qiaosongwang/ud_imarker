@@ -83,11 +83,12 @@ bool robust_plane_fit(pcl::PointCloud<pcl::PointXYZ> &,
 		      pcl::ModelCoefficients &,
 		      double);
 
-void radial_line_slice(pcl::PointCloud<pcl::PointXYZ> &,
-		 pcl::PointCloud<pcl::PointXYZ> &,
-		 pcl::PointCloud<pcl::PointXYZ> &,
-		 pcl::ModelCoefficients &,
-		 double);
+void cylinder_slice(pcl::PointCloud<pcl::PointXYZ> &,
+		    pcl::PointCloud<pcl::PointXYZ> &,
+		    pcl::PointCloud<pcl::PointXYZ> &,
+		    pcl::ModelCoefficients &,
+		    double,
+		    double, double);
 
 bool robust_line_fit(pcl::PointCloud<pcl::PointXYZ> &,
 		      pcl::PointCloud<pcl::PointXYZ> &,

@@ -10,7 +10,6 @@ Panels:
         - /InteractiveMarkers1
         - /Marker1
         - /MarkerArray1
-        - /PointCloud21
       Splitter Ratio: 0.5
     Tree Height: 656
   - Class: rviz/Selection
@@ -40,7 +39,7 @@ Visualization Manager:
       Cell Size: 1
       Class: rviz/Grid
       Color: 160; 160; 164
-      Enabled: false
+      Enabled: true
       Line Style:
         Line Width: 0.03
         Value: Billboards
@@ -53,7 +52,7 @@ Visualization Manager:
       Plane: XY
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
-      Value: false
+      Value: true
     - Class: rviz/InteractiveMarkers
       Enable Transparency: true
       Enabled: true
@@ -76,7 +75,7 @@ Visualization Manager:
       Marker Topic: visualization_marker_array
       Name: MarkerArray
       Namespaces:
-        {}
+        UD_rviz_interaction: true
       Queue Size: 100
       Value: true
     - Alpha: 1
@@ -124,7 +123,7 @@ Visualization Manager:
       Max Intensity: 4096
       Min Color: 0; 0; 0
       Min Intensity: 0
-      Name: PointCloud2
+      Name: ud_output
       Position Transformer: XYZ
       Queue Size: 10
       Selectable: true
@@ -132,6 +131,62 @@ Visualization Manager:
       Size (m): 0.01
       Style: Flat Squares
       Topic: /ud_output
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: false
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color: 0; 255; 0
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Max Color: 0; 255; 0
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: ud_inliers
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.02
+      Style: Flat Squares
+      Topic: /ud_inliers
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color: 255; 0; 0
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: false
+      Max Color: 255; 0; 0
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: ud_outliers
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.02
+      Style: Flat Squares
+      Topic: /ud_outliers
       Use Fixed Frame: true
       Use rainbow: true
       Value: false
@@ -159,17 +214,17 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 4.06874
+      Distance: 7.09546
       Focal Point:
-        X: 1.57721
-        Y: 0.349419
-        Z: 0.571165
+        X: 1.02286
+        Y: 3.23984
+        Z: 0.833002
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.724797
+      Pitch: 0.0347979
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.34041
+      Yaw: 5.11725
     Saved: ~
 Window Geometry:
   Displays:
@@ -187,5 +242,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1360
-  X: 478
-  Y: 93
+  X: 754
+  Y: 53

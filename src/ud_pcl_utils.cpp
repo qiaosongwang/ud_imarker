@@ -9,36 +9,57 @@
 
 // everything within distance *threshold* of LINE is an inlier, everything outside that is an outlier
 
-void radial_line_slice(pcl::PointCloud<pcl::PointXYZ> & cloud,
-		      pcl::PointCloud<pcl::PointXYZ> & cloud_inliers,
-		      pcl::PointCloud<pcl::PointXYZ> & cloud_outliers,
-		      pcl::ModelCoefficients & coefficients,
-		      double threshold)
+// basically pcl::SampleConsensusModelLine<PointT>::selectWithinDistance () from sac_model_line.hpp
+
+void cylinder_slice(pcl::PointCloud<pcl::PointXYZ> & cloud,
+		    pcl::PointCloud<pcl::PointXYZ> & cloud_inliers,
+		    pcl::PointCloud<pcl::PointXYZ> & cloud_outliers,
+		    pcl::ModelCoefficients & line_coefficients,
+		    double threshold,
+		    double min_xp, double max_xp)
 {
   cloud_inliers.points.clear();
   cloud_outliers.points.clear();
 
+  double sqr_threshold = threshold * threshold;
+
+  // Obtain the line point and direction
+  Eigen::Vector4f line_pt  (line_coefficients.values[0], line_coefficients.values[1], line_coefficients.values[2], 0);
+  Eigen::Vector4f line_dir (line_coefficients.values[3], line_coefficients.values[4], line_coefficients.values[5], 0);
+  line_dir.normalize ();
+
   double dist;
 
-  printf("radial_line_slice() not yet implemented\n");
-  exit(1);
+  // for projection
+
+  Eigen::Vector3f L0(line_coefficients.values[0], line_coefficients.values[1], line_coefficients.values[2]);
+  Eigen::Vector3f Ldir(line_coefficients.values[3], line_coefficients.values[4], line_coefficients.values[5]);
+  Ldir.normalize();
+
+  Eigen::Vector3f Pdir;
+  double xp;
 
   for (int i = 0; i < cloud.points.size(); i++) {
 
-    /*
-    dist = 
-      coefficients.values[0] * cloud.points[i].x +
-      coefficients.values[1] * cloud.points[i].y +
-      coefficients.values[2] * cloud.points[i].z +
-      coefficients.values[3];
-    */
+    // Calculate the distance from the point to the line
+    // D = ||(P2-P1) x (P1-P0)|| / ||P2-P1|| = norm (cross (p2-p1, p2-p0)) / norm(p2-p1)
 
-    if (fabs(dist) < threshold)
-      cloud_inliers.points.push_back(cloud.points[i]);
+    double sqr_distance = (line_pt - cloud.points[i].getVector4fMap ()).cross3 (line_dir).squaredNorm ();
+
+    // close enough radially
+
+    if (sqr_distance < sqr_threshold) {
+
+      Eigen::Vector3f P(cloud.points[i].x, cloud.points[i].y, cloud.points[i].z);
+      Pdir = P - L0;
+      xp = Pdir.dot(Ldir);
+      if (xp >= min_xp && xp <= max_xp)
+	cloud_inliers.points.push_back(cloud.points[i]);
+    }
     else 
       cloud_outliers.points.push_back(cloud.points[i]);
+    
   }
-
 }
 
 //----------------------------------------------------------------------------
@@ -48,7 +69,7 @@ void radial_line_slice(pcl::PointCloud<pcl::PointXYZ> & cloud,
 void plane_slice(pcl::PointCloud<pcl::PointXYZ> & cloud,
 		      pcl::PointCloud<pcl::PointXYZ> & cloud_inliers,
 		      pcl::PointCloud<pcl::PointXYZ> & cloud_outliers,
-		      pcl::ModelCoefficients & coefficients,
+		      pcl::ModelCoefficients & plane_coefficients,
 		      double threshold)
 {
   cloud_inliers.points.clear();
@@ -59,10 +80,10 @@ void plane_slice(pcl::PointCloud<pcl::PointXYZ> & cloud,
   for (int i = 0; i < cloud.points.size(); i++) {
 
     dist = 
-      coefficients.values[0] * cloud.points[i].x +
-      coefficients.values[1] * cloud.points[i].y +
-      coefficients.values[2] * cloud.points[i].z +
-      coefficients.values[3];
+      plane_coefficients.values[0] * cloud.points[i].x +
+      plane_coefficients.values[1] * cloud.points[i].y +
+      plane_coefficients.values[2] * cloud.points[i].z +
+      plane_coefficients.values[3];
 
     if (fabs(dist) < threshold)
       cloud_inliers.points.push_back(cloud.points[i]);

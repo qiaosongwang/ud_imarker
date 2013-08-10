@@ -430,9 +430,11 @@ void DecreaseInlierDistanceThreshCb( const visualization_msgs::InteractiveMarker
 
 void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
+  int i;
+
   cursor_cloudptr->points.clear();
 
-  for (int i = 0; i < ud_cursor_pts.size(); i++)
+  for (i = 0; i < ud_cursor_pts.size(); i++)
     cursor_cloudptr->points.push_back(ud_cursor_pts[i]);
 
   robust_line_fit(*cursor_cloudptr,
@@ -441,11 +443,33 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
 		  line_coefficients,
 		  ransac_inlier_distance_threshold);
 
-  radial_line_slice(*input_cloudptr,
-		    *inlier_cloudptr,
-		    *outlier_cloudptr,
-		    line_coefficients,
-		    0.1);
+  Eigen::Vector3f L0(line_coefficients.values[0], line_coefficients.values[1], line_coefficients.values[2]);
+  Eigen::Vector3f Ldir(line_coefficients.values[3], line_coefficients.values[4], line_coefficients.values[5]);
+  Ldir.normalize();
+
+  Eigen::Vector3f Pdir;
+  double xp;
+  double min_xp = 1000.0;
+  double max_xp = -1000.0;
+
+  for (i = 0; i < ud_cursor_pts.size(); i++) {
+    Eigen::Vector3f P(cursor_cloudptr->points[i].x, cursor_cloudptr->points[i].y, cursor_cloudptr->points[i].z);
+    Pdir = P - L0;
+    xp = Pdir.dot(Ldir);
+    if (xp < min_xp)
+      min_xp = xp;
+    if (xp > max_xp)
+      max_xp = xp;
+    //    printf("%i: %.3lf\n", i, xp);
+  }
+  //  printf("[%.3lf, %.3lf]\n", min_xp, max_xp);
+
+  cylinder_slice(*input_cloudptr,
+		 *inlier_cloudptr,
+		 *outlier_cloudptr,
+		 line_coefficients,
+		 0.1,
+		 min_xp, max_xp);
 
   inlier_cloudptr->header.frame_id = "base_link";
   inlier_cloud_pub.publish(inlier_cloudptr);
