@@ -30,6 +30,7 @@ ros::Publisher inlier_cloud_pub;
 ros::Publisher outlier_cloud_pub;
 
 pcl::ModelCoefficients plane_coefficients;
+pcl::ModelCoefficients line_coefficients;
 
 //----------------------------------------------------------------------------
 
@@ -429,6 +430,30 @@ void DecreaseInlierDistanceThreshCb( const visualization_msgs::InteractiveMarker
 
 void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
+  cursor_cloudptr->points.clear();
+
+  for (int i = 0; i < ud_cursor_pts.size(); i++)
+    cursor_cloudptr->points.push_back(ud_cursor_pts[i]);
+
+  robust_line_fit(*cursor_cloudptr,
+		  *inlier_cloudptr,
+		  *outlier_cloudptr,
+		  line_coefficients,
+		  ransac_inlier_distance_threshold);
+
+  radial_line_slice(*input_cloudptr,
+		    *inlier_cloudptr,
+		    *outlier_cloudptr,
+		    line_coefficients,
+		    0.1);
+
+  inlier_cloudptr->header.frame_id = "base_link";
+  inlier_cloud_pub.publish(inlier_cloudptr);
+
+  outlier_cloudptr->header.frame_id = "base_link";
+  outlier_cloud_pub.publish(*outlier_cloudptr);
+
+  /*
   if (ud_cursor_pts.size() < 2)
     printf("need at least 2 points to parametrize a line\n");
   if (ud_cursor_pts.size() == 2)
@@ -497,7 +522,7 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
                                                << cloud.points[inliers->indices[i]].y << " "
                                                << cloud.points[inliers->indices[i]].z << std::endl;
   }
-  
+  */
 }
 
 //----------------------------------------------------------------------------
@@ -523,12 +548,9 @@ void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
 	      plane_coefficients,
 	      0.1);
 
-  //  pcl::toROSMsg(*inlier_cloudptr, inlier_msg);
   inlier_cloudptr->header.frame_id = "base_link";
   inlier_cloud_pub.publish(inlier_cloudptr);
 
-  //  pcl::toROSMsg(*outlier_cloudptr, outlier_msg);
-  //  outlier_msg.header.frame_id = "base_link";
   outlier_cloudptr->header.frame_id = "base_link";
   outlier_cloud_pub.publish(*outlier_cloudptr);
 
