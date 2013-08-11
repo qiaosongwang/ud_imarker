@@ -6,10 +6,7 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /Grid1
-        - /InteractiveMarkers1
-        - /Marker1
-        - /MarkerArray1
+        - /Marker2
       Splitter Ratio: 0.5
     Tree Height: 656
   - Class: rviz/Selection
@@ -75,7 +72,7 @@ Visualization Manager:
       Marker Topic: visualization_marker_array
       Name: MarkerArray
       Namespaces:
-        UD_rviz_interaction: true
+        {}
       Queue Size: 100
       Value: true
     - Alpha: 1
@@ -155,9 +152,9 @@ Visualization Manager:
       Position Transformer: XYZ
       Queue Size: 10
       Selectable: true
-      Size (Pixels): 3
+      Size (Pixels): 5
       Size (m): 0.02
-      Style: Flat Squares
+      Style: Spheres
       Topic: /ud_inliers
       Use Fixed Frame: true
       Use rainbow: true
@@ -183,13 +180,21 @@ Visualization Manager:
       Position Transformer: XYZ
       Queue Size: 10
       Selectable: true
-      Size (Pixels): 3
+      Size (Pixels): 5
       Size (m): 0.02
-      Style: Flat Squares
+      Style: Points
       Topic: /ud_outliers
       Use Fixed Frame: true
       Use rainbow: true
       Value: false
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /cylinder_marker
+      Name: Marker
+      Namespaces:
+        UD_rviz_interaction: true
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -214,17 +219,17 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 7.09546
+      Distance: 1.76129
       Focal Point:
-        X: 1.02286
-        Y: 3.23984
-        Z: 0.833002
+        X: 1.41687
+        Y: 0.372523
+        Z: 0.730478
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.0347979
+      Pitch: 0.619798
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.11725
+      Yaw: 4.28232
     Saved: ~
 Window Geometry:
   Displays:
@@ -242,5 +247,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1360
-  X: 754
-  Y: 53
+  X: 314
+  Y: 73

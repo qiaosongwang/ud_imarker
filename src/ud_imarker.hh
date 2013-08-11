@@ -96,6 +96,16 @@ bool robust_line_fit(pcl::PointCloud<pcl::PointXYZ> &,
 		      pcl::ModelCoefficients &,
 		      double);
 
+bool robust_cylinder_fit(pcl::PointCloud<pcl::PointXYZ> &,
+			 pcl::PointCloud<pcl::PointXYZ> &,
+			 pcl::PointCloud<pcl::PointXYZ> &,
+			 pcl::ModelCoefficients &,
+			 double);
+
+void compute_line_limits(pcl::PointCloud<pcl::PointXYZ>::Ptr,
+			 pcl::ModelCoefficients &,
+			 double &, double &);
+
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
 

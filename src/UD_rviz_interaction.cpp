@@ -23,6 +23,9 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloudptr;
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr input_cropped_cloudptr;
 
+pcl::PointCloud<pcl::PointXYZ>::Ptr rough_inlier_cloudptr;
+pcl::PointCloud<pcl::PointXYZ>::Ptr rough_outlier_cloudptr;
+
 pcl::PointCloud<pcl::PointXYZ>::Ptr inlier_cloudptr;
 pcl::PointCloud<pcl::PointXYZ>::Ptr outlier_cloudptr;
 
@@ -31,6 +34,7 @@ ros::Publisher outlier_cloud_pub;
 
 pcl::ModelCoefficients plane_coefficients;
 pcl::ModelCoefficients line_coefficients;
+pcl::ModelCoefficients cylinder_coefficients;
 
 //----------------------------------------------------------------------------
 
@@ -55,11 +59,18 @@ Eigen::Vector4f minPoint;
 Eigen::Vector4f maxPoint;
  
 
+double max_cylinder_radius = 0.05;
+
+double cylinder_inlier_distance_threshold = 0.025;
 
 double ransac_inlier_distance_threshold = 0.05;
 double ransac_inlier_distance_threshold_delta = 0.01;
 
 //Defining ROS parameters
+
+//ros::Publisher rough_cylinder_marker_pub;
+ros::Publisher cylinder_marker_pub;
+
 ros::Publisher marker_pub;
 ros::Publisher marker_array_pub;
 
@@ -109,6 +120,57 @@ void initialize_pcl()
 
   inlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
   outlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+
+  rough_inlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+  rough_outlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+}
+
+//----------------------------------------------------------------------------
+
+void send_cylinder_marker(pcl::ModelCoefficients & coefficients,
+			  double radius,
+			  double min_xp, double max_xp,
+			  float r, float g, float b, float a)
+{
+  // Initialize marker parameters
+
+  visualization_msgs::Marker cyl;
+  cyl.header.frame_id="/base_link";
+  cyl.header.stamp =ros::Time::now();
+  cyl.ns="UD_rviz_interaction";
+  cyl.action=visualization_msgs::Marker::ADD;
+
+  cyl.pose.position.x = coefficients.values[0];
+  cyl.pose.position.y = coefficients.values[1];
+  cyl.pose.position.z = coefficients.values[2];
+
+  cyl.pose.orientation.x =0.0;
+  cyl.pose.orientation.y =0.0;
+  cyl.pose.orientation.z =0.0;
+  cyl.pose.orientation.w =1.0;
+  
+  //ID
+
+  cyl.id =33;
+  
+  //Type
+  cyl.type = visualization_msgs::Marker::CYLINDER;
+  
+  //Scale
+
+  cyl.scale.x = 2.0*radius;
+  cyl.scale.y = 2.0*radius;
+  cyl.scale.z = max_xp - min_xp;
+  
+  //Color
+
+  cyl.color.r = r;
+  cyl.color.g = g;
+  cyl.color.b = b;
+  cyl.color.a = a;
+
+
+  cylinder_marker_pub.publish(cyl);
 }
 
 //----------------------------------------------------------------------------
@@ -437,45 +499,55 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
   for (i = 0; i < ud_cursor_pts.size(); i++)
     cursor_cloudptr->points.push_back(ud_cursor_pts[i]);
 
+  // get a rough line as our starting point
+
   robust_line_fit(*cursor_cloudptr,
 		  *inlier_cloudptr,
 		  *outlier_cloudptr,
 		  line_coefficients,
 		  ransac_inlier_distance_threshold);
 
-  Eigen::Vector3f L0(line_coefficients.values[0], line_coefficients.values[1], line_coefficients.values[2]);
-  Eigen::Vector3f Ldir(line_coefficients.values[3], line_coefficients.values[4], line_coefficients.values[5]);
-  Ldir.normalize();
+  // use its endpoints and a max radius to crop input point cloud to cylindrical volume of interest (VOI)
 
-  Eigen::Vector3f Pdir;
-  double xp;
-  double min_xp = 1000.0;
-  double max_xp = -1000.0;
-
-  for (i = 0; i < ud_cursor_pts.size(); i++) {
-    Eigen::Vector3f P(cursor_cloudptr->points[i].x, cursor_cloudptr->points[i].y, cursor_cloudptr->points[i].z);
-    Pdir = P - L0;
-    xp = Pdir.dot(Ldir);
-    if (xp < min_xp)
-      min_xp = xp;
-    if (xp > max_xp)
-      max_xp = xp;
-    //    printf("%i: %.3lf\n", i, xp);
-  }
-  //  printf("[%.3lf, %.3lf]\n", min_xp, max_xp);
+  double min_xp, max_xp;
+  compute_line_limits(cursor_cloudptr, line_coefficients, min_xp, max_xp);
 
   cylinder_slice(*input_cloudptr,
-		 *inlier_cloudptr,
-		 *outlier_cloudptr,
+		 *rough_inlier_cloudptr,
+		 *rough_outlier_cloudptr,
 		 line_coefficients,
-		 0.1,
+		 max_cylinder_radius,
 		 min_xp, max_xp);
 
+  send_cylinder_marker(line_coefficients,
+		       max_cylinder_radius,
+		       min_xp, max_xp,
+		       1.0, 0.0, 0.0, 0.5);
+
+  //  rough_cylinder_marker_pub.publish();
+
+  rough_inlier_cloudptr->header.frame_id = "base_link";
+  inlier_cloud_pub.publish(*rough_inlier_cloudptr);
+
+  rough_outlier_cloudptr->header.frame_id = "base_link";
+  outlier_cloud_pub.publish(*rough_outlier_cloudptr);
+
+  // now more exactly get the parameters of a cylindrical cluster within the VOI
+
+  /*
+  robust_cylinder_fit(*rough_inlier_cloudptr,
+		      *inlier_cloudptr,
+		      *outlier_cloudptr,
+		      cylinder_coefficients,
+		      cylinder_inlier_distance_threshold);
+
   inlier_cloudptr->header.frame_id = "base_link";
-  inlier_cloud_pub.publish(inlier_cloudptr);
+  inlier_cloud_pub.publish(*inlier_cloudptr);
 
   outlier_cloudptr->header.frame_id = "base_link";
   outlier_cloud_pub.publish(*outlier_cloudptr);
+  */
+
 
   /*
   if (ud_cursor_pts.size() < 2)
@@ -1572,6 +1644,9 @@ int main( int argc, char** argv )
 
   marker_pub = nhp->advertise<visualization_msgs::Marker>("visualization_marker", 10);
   marker_array_pub = nhp->advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 10);
+
+  //  rough_cylinder_marker_pub = nhp->advertise<visualization_msgs::Marker>("rough_cylinder_marker", 10);
+  cylinder_marker_pub = nhp->advertise<visualization_msgs::Marker>("cylinder_marker", 10);
 
   ptcloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("ud_output", 1);
 
