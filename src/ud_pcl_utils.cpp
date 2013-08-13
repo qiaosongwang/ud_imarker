@@ -562,8 +562,11 @@ bool robust_circle_fit( pcl::PointCloud<pcl::PointXYZ> & cloud)
     seg.setInputCloud (cloud.makeShared());
     // Obtain the circle inliers and coefficients
     seg.segment (circle_inlier, circle_coeff);
+    
+#ifdef DEBUG_FIT
     std::cerr << "Circle inliers " << circle_inlier.indices.size() << std::endl;
     std::cerr << "Circle coefficients: " << circle_coeff << std::endl;
+#endif
 
     extract.setInputCloud(cloud.makeShared());
     extract.setIndices(boost::make_shared<const pcl::PointIndices> (circle_inlier));
