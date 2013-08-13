@@ -487,7 +487,9 @@ bool robust_cylinder_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
 // use RANSAC to find CIRCLE  fit to point cloud
 
 bool robust_circle_fit( pcl::PointCloud<pcl::PointXYZ> & cloud) 
-{   
+{  
+
+
 // Declaration
     pcl::PointCloud<pcl::PointXYZ>::Ptr outputcloud (new pcl::PointCloud<pcl::PointXYZ>);
     pcl::NormalEstimation<PointXYZ, pcl::Normal> ne;
@@ -498,10 +500,10 @@ bool robust_circle_fit( pcl::PointCloud<pcl::PointXYZ> & cloud)
 
     pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(
     new pcl::PointCloud<pcl::Normal>);
-    pcl::ModelCoefficients::Ptr coefficients_cylinder(
+    pcl::ModelCoefficients::Ptr circle_coeff(
     new pcl::ModelCoefficients);
     pcl::PointIndices::Ptr inliers_plane(new pcl::PointIndices),
-    inliers_cylinder(new pcl::PointIndices);
+    circle_inlier(new pcl::PointIndices);
 
 // Estimate normal
     ne.setSearchMethod(tree);
@@ -521,11 +523,11 @@ bool robust_circle_fit( pcl::PointCloud<pcl::PointXYZ> & cloud)
     seg.setInputNormals(cloud_normals);
 
 // Get circle coefficients and inliers
-    seg.segment(*inliers_cylinder, *coefficients_cylinder);
+    seg.segment(*circle_inlier, *circle_coeff);
 
 
     extract.setInputCloud(cloud.makeShared());
-    extract.setIndices(inliers_cylinder);
+    extract.setIndices(circle_inlier);
     extract.setNegative(false);
     extract.filter(*outputcloud);
 
@@ -540,6 +542,36 @@ bool robust_circle_fit( pcl::PointCloud<pcl::PointXYZ> & cloud)
 #ifdef DEBUG_FIT
     printf( "Circle found!");
 #endif
+
+
+
+//Uncomment for simplified code
+/*
+    pcl::PointIndices circle_inlier;
+    pcl::ModelCoefficients circle_coeff;
+    pcl::SACSegmentation<pcl::PointXYZ> seg;
+    pcl::ExtractIndices<PointXYZ> extract;
+
+
+    seg.setOptimizeCoefficients (true);
+    seg.setModelType (pcl::SACMODEL_CIRCLE2D);
+    seg.setMethodType (pcl::SAC_RANSAC);
+    seg.setMaxIterations (10000);
+    seg.setDistanceThreshold (0.05);
+    seg.setRadiusLimits (0.05, 0.1);
+    seg.setInputCloud (cloud.makeShared());
+    // Obtain the circle inliers and coefficients
+    seg.segment (circle_inlier, circle_coeff);
+    std::cerr << "Circle inliers " << circle_inlier.indices.size() << std::endl;
+    std::cerr << "Circle coefficients: " << circle_coeff << std::endl;
+
+    extract.setInputCloud(cloud.makeShared());
+    extract.setIndices(boost::make_shared<const pcl::PointIndices> (circle_inlier));
+
+    pcl::PointCloud<pcl::PointXYZ> outputcloud;
+    extract.filter (outputcloud);
+*/
+
     return true;
 }
 //----------------------------------------------------------------------------
