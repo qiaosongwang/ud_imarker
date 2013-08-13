@@ -484,4 +484,64 @@ bool robust_cylinder_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
 }
 
 //----------------------------------------------------------------------------
+
+// use RANSAC to find CIRCLE  fit to point cloud
+
+bool robust_circle_fit( pcl::PointCloud<pcl::PointXYZ> & cloud) 
+{   
+// Declaration
+    pcl::PointCloud<pcl::PointXYZ>::Ptr outputcloud (new pcl::PointCloud<pcl::PointXYZ>);
+		pcl::NormalEstimation<PointXYZ, pcl::Normal> ne;
+		pcl::SACSegmentationFromNormals<PointXYZ, pcl::Normal> seg;
+		pcl::ExtractIndices<PointXYZ> extract;
+		pcl::ExtractIndices<pcl::Normal> extract_normals;
+		pcl::search::KdTree<PointXYZ>::Ptr tree(new pcl::search::KdTree<PointXYZ>());
+
+		pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(
+		new pcl::PointCloud<pcl::Normal>);
+		pcl::ModelCoefficients::Ptr coefficients_cylinder(
+		new pcl::ModelCoefficients);
+		pcl::PointIndices::Ptr inliers_plane(new pcl::PointIndices),
+		inliers_cylinder(new pcl::PointIndices);
+
+		// Estimate normal
+		ne.setSearchMethod(tree);
+		ne.setInputCloud(cloud.makeShared());
+		ne.setKSearch(50);
+		ne.compute(*cloud_normals);
+
+		// Set segmentation object model to be a circle
+		seg.setOptimizeCoefficients(true);
+		seg.setModelType(pcl::SACMODEL_CIRCLE2D);
+		seg.setMethodType(pcl::SAC_RANSAC);
+		seg.setNormalDistanceWeight(0.1);
+		seg.setMaxIterations(1000);
+		seg.setDistanceThreshold(0.1);
+		seg.setRadiusLimits(0.02, 0.08);
+		seg.setInputCloud(cloud.makeShared());
+		seg.setInputNormals(cloud_normals);
+
+		// Get circle coefficients and inliers
+		seg.segment(*inliers_cylinder, *coefficients_cylinder);
+
+
+		extract.setInputCloud(cloud.makeShared());
+		extract.setIndices(inliers_cylinder);
+		extract.setNegative(false);
+		extract.filter(*outputcloud);
+
+		if (outputcloud->points.empty()) 
+    {
+
+#ifdef DEBUG_FIT
+		printf( "Can't find circle");
+#endif
+		return false;
+		}
+#ifdef DEBUG_FIT
+		printf( "Circle found!");
+#endif
+		return true;
+}
+//----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
