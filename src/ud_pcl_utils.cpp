@@ -586,5 +586,55 @@ bool robust_circle_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
 
     return true;
 }
+
+//----------------------------------------------------------------------------
+// Color based segmentation
+//----------------------------------------------------------------------------
+
+//----------------------------------------------------------------------------
+// Used for highlighting a pointcloud
+void change_color (pcl::PointCloud<pcl::PointXYZRGB> & cloud, 
+                      int r, 
+                      int g, 
+                      int b)
+{
+    for (size_t i = 0; i < cloud.size(); ++i){
+        (cloud)[i].r=r;
+        (cloud)[i].g=g;
+        (cloud)[i].b=b;
+    }
+}
+
+//----------------------------------------------------------------------------
+
+// The purpose is to let the user select one point or a group of points to mark 
+// foreground/background, then use color based methods to get segmented pointcloud 
+// with similar color, then do circle/plane/cylinder fitting. 
+
+
+void segment_color(pcl::PointCloud<pcl::PointXYZRGB> & cloud,
+                         pcl::PointIndices::Ptr segmented,
+                         int reference_point_index,
+                         int threshold)
+{
+
+    pcl::PointXYZRGB ud_cursor_current = (cloud)[reference_point_index];
+    int r = ud_cursor_current.r;
+    int g = ud_cursor_current.g;
+    int b = ud_cursor_current.b;
+    int i = 0;
+    for (i = 0; i <cloud.size()-1; i++)
+    {
+        if
+        (
+             abs(cloud.at(i).r-r)<threshold &&
+             abs(cloud.at(i).g-g)<threshold &&
+             abs(cloud.at(i).b-b)<threshold
+        )
+        segmented->indices.push_back(i);
+    }
+}
+
+
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
