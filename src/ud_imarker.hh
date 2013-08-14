@@ -1,4 +1,3 @@
-
 #ifndef UD_IMARKER
 #define UD_IMARKER
 
@@ -101,6 +100,13 @@ bool robust_cylinder_fit(pcl::PointCloud<pcl::PointXYZ> &,
 			 pcl::PointCloud<pcl::PointXYZ> &,
 			 pcl::ModelCoefficients &,
 			 double);
+			 
+bool robust_circle_fit(pcl::PointCloud<pcl::PointXYZ> &,
+			 pcl::PointCloud<pcl::PointXYZ> &,
+			 pcl::PointCloud<pcl::PointXYZ> &,
+			 pcl::ModelCoefficients &,
+			 double,
+                         double);
 
 void compute_line_limits(pcl::PointCloud<pcl::PointXYZ>::Ptr,
 			 pcl::ModelCoefficients &,
