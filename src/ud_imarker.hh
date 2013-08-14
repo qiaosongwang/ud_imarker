@@ -87,7 +87,8 @@ void cylinder_slice(pcl::PointCloud<pcl::PointXYZ> &,
 		    pcl::PointCloud<pcl::PointXYZ> &,
 		    pcl::ModelCoefficients &,
 		    double,
-		    double, double);
+		    double, 
+		    double);
 
 bool robust_line_fit(pcl::PointCloud<pcl::PointXYZ> &,
 		      pcl::PointCloud<pcl::PointXYZ> &,
@@ -111,6 +112,15 @@ bool robust_circle_fit(pcl::PointCloud<pcl::PointXYZ> &,
 void compute_line_limits(pcl::PointCloud<pcl::PointXYZ>::Ptr,
 			 pcl::ModelCoefficients &,
 			 double &, double &);
+			 
+void change_color (pcl::PointCloud<pcl::PointXYZRGB> &, 
+                         int, 
+                         int, 
+                         int)
+void segment_color(pcl::PointCloud<pcl::PointXYZRGB> &,
+                         pcl::PointIndices::Ptr,
+                         int,
+                         int)
 
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
