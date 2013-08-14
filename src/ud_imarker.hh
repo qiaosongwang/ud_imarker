@@ -116,11 +116,11 @@ void compute_line_limits(pcl::PointCloud<pcl::PointXYZ>::Ptr,
 void change_color (pcl::PointCloud<pcl::PointXYZRGB> &, 
                          int, 
                          int, 
-                         int)
+                         int);
 void segment_color(pcl::PointCloud<pcl::PointXYZRGB> &,
                          pcl::PointIndices::Ptr,
                          int,
-                         int)
+                         int);
 
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
