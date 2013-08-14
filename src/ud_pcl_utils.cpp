@@ -486,12 +486,15 @@ bool robust_cylinder_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
 
 // use RANSAC to find CIRCLE  fit to point cloud
 
-bool robust_circle_fit( pcl::PointCloud<pcl::PointXYZ> & cloud) 
+bool robust_circle_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
+			 pcl::PointCloud<pcl::PointXYZ> & cloud_inliers,
+			 pcl::PointCloud<pcl::PointXYZ> & cloud_outliers,
+			 pcl::ModelCoefficients & coefficients,
+			 double radius_min,
+                         double radius_max)
 {  
 
-
 // Declaration
-    pcl::PointCloud<pcl::PointXYZ>::Ptr outputcloud (new pcl::PointCloud<pcl::PointXYZ>);
     pcl::NormalEstimation<PointXYZ, pcl::Normal> ne;
     pcl::SACSegmentationFromNormals<PointXYZ, pcl::Normal> seg;
     pcl::ExtractIndices<PointXYZ> extract;
@@ -500,8 +503,10 @@ bool robust_circle_fit( pcl::PointCloud<pcl::PointXYZ> & cloud)
 
     pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(
     new pcl::PointCloud<pcl::Normal>);
-    pcl::ModelCoefficients::Ptr circle_coeff(
-    new pcl::ModelCoefficients);
+
+ //   pcl::ModelCoefficients::Ptr circle_coeff(
+ //   new pcl::ModelCoefficients);
+
     pcl::PointIndices::Ptr inliers_plane(new pcl::PointIndices),
     circle_inlier(new pcl::PointIndices);
 
@@ -518,20 +523,24 @@ bool robust_circle_fit( pcl::PointCloud<pcl::PointXYZ> & cloud)
     seg.setNormalDistanceWeight(0.1);
     seg.setMaxIterations(1000);
     seg.setDistanceThreshold(0.1);
-    seg.setRadiusLimits(0.02, 0.08);
+
+// For testing
+//  radius_min =0.02;
+//  radius_max =0.08;
+    seg.setRadiusLimits(radius_min, radius_max);
     seg.setInputCloud(cloud.makeShared());
     seg.setInputNormals(cloud_normals);
 
 // Get circle coefficients and inliers
-    seg.segment(*circle_inlier, *circle_coeff);
+    seg.segment(*circle_inlier, coefficients);
 
 
     extract.setInputCloud(cloud.makeShared());
     extract.setIndices(circle_inlier);
     extract.setNegative(false);
-    extract.filter(*outputcloud);
+    extract.filter(cloud_inliers);
 
-    if (outputcloud->points.empty()) 
+    if (cloud_inliers.points.empty()) 
     {
 
 #ifdef DEBUG_FIT
