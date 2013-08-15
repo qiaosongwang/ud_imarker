@@ -6,6 +6,7 @@
 //----------------------------------------------------------------------------
 
 #include "ud_imarker.hh"
+#include "ud_measurement_panel/MeasurementCommand.h"
 
 // rosrun pcl_ros pcd_to_pointcloud golfcart_pillar1_hokuyo.pcd 1
 
@@ -82,6 +83,7 @@ ros::Publisher outliers_cloud_pub;
 ros::NodeHandle *nhp;
 ros::Subscriber click_sub;
 ros::Subscriber ptcloud_sub;
+ros::Subscriber measurement_sub;
 
 float cpdist=0; //Current frame
 float globalscale = 1;  //What are the units on this? -Brad
@@ -1606,6 +1608,40 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
 
 //----------------------------------------------------------------------------
 
+
+void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
+{
+	// Just need to hook these up to the proper functions
+	if(msg.RemoveAllPoints == 1)
+	{
+		cout << "remove all points called" << endl;
+	}
+	else if (msg.RemoveLastPoint == 1)
+	{
+	}
+	else if (msg.EstimatePlane == 1)
+	{
+	}
+	else if (msg.EstimateLine == 1)
+	{
+	}
+	else if (msg.MeasureLength == 1)
+	{
+	}
+	else if (msg.Crop == 1)
+	{
+	}
+	else if (msg.Undo == 1)
+	{
+	}
+	else
+	{
+		cout << "Didn't understand the measurement_command ros msg." << endl;
+	}
+}
+
+//----------------------------------------------------------------------------
+
 int main( int argc, char** argv )
 {
   initialize_pcl();
@@ -1658,6 +1694,9 @@ int main( int argc, char** argv )
   click_sub = nhp->subscribe("ud_clicked_point", 10, clickCallback);
 
   ptcloud_sub = nhp->subscribe("cloud_pcd", 10, ptcloudCallback);
+  
+  //add a subscriber to listen for things that are clicked on in the measurement panel
+  measurement_sub = nhp->subscribe("measurement_command", 10, panelCallback);
   
 
   ros::Rate UD_rviz_interaction_rate(30);
