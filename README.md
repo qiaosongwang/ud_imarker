@@ -5,14 +5,17 @@ This is the marker server node for RVIZ. It subscribes user mouse clicks from ud
 Installation instructions:
 
 In order to compile successfully,you need to download ud_cursor and ud_measurement_panel.
-
 Type the following command:
 
 cd catkin_ws/src
 git clone https://github.com/qiaosongwang/ud_cursor.git
+
 git clone https://github.com/qiaosongwang/ud_measurement_panel.git
+
 git clone https://github.com/qiaosongwang/ud_imarker.git
+
 ../
+
 catkin_make
 
 Usage:
