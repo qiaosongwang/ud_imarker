@@ -41,11 +41,23 @@
 
 #include <pcl/features/normal_3d.h>
 #include <pcl/features/normal_3d_omp.h>
+#include <pcl/features/fpfh_omp.h>
+#include <pcl/features/pfh.h>
+#include <pcl/features/pfhrgb.h>
+#include <pcl/features/3dsc.h>
+#include <pcl/features/shot_omp.h>
 
 #include <pcl/surface/mls.h>
 #include <pcl/surface/gp3.h>
 #include <pcl/surface/poisson.h>
 #include <pcl/surface/marching_cubes_rbf.h>
+
+#include <pcl/registration/transformation_estimation_svd.h>
+#include <pcl/registration/icp.h>
+#include <pcl/registration/correspondence_rejection_sample_consensus.h>
+
+#include <pcl/keypoints/sift_keypoint.h>
+#include <pcl/keypoints/harris_keypoint3D.h>
 
 #include <Eigen/Core>
 
@@ -117,10 +129,42 @@ void change_color (pcl::PointCloud<pcl::PointXYZRGB> &,
                          int, 
                          int, 
                          int);
+
 void segment_color(pcl::PointCloud<pcl::PointXYZRGB> &,
                          pcl::PointIndices::Ptr,
                          int,
                          int);
+
+void sift_detection ( pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr,
+                      pcl::PointCloud<pcl::PointXYZI>::Ptr);
+
+void fpfh_detection ( pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr ,
+                      pcl::PointCloud<pcl::PointXYZI>::Ptr,
+                      pcl::PointCloud<pcl::FPFHSignature33>::Ptr);
+
+void find_correspondences (pcl::PointCloud<pcl::FPFHSignature33>::Ptr,
+                           pcl::PointCloud<pcl::FPFHSignature33>::Ptr,
+                           vector<int>& correspondences);
+
+void filter_correspondences ( pcl::PointCloud<pcl::PointXYZI>::Ptr,
+                             pcl::PointCloud<pcl::PointXYZI>::Ptr,
+                             vector<int>& source2target_ , vector<int>&,
+                             pcl::CorrespondencesPtr );
+
+Eigen::Matrix4f initial_transform (
+        pcl::PointCloud<pcl::PointXYZI>::Ptr,
+        pcl::PointCloud<pcl::PointXYZI>::Ptr,
+        pcl::CorrespondencesPtr);
+
+Eigen::Matrix4f final_transform (
+        pcl::PointCloud<pcl::PointXYZI>::Ptr,
+        pcl::PointCloud<pcl::PointXYZI>::Ptr
+        );
+
+bool sift_registration (
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr,
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr,
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr );
 
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
