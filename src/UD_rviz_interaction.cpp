@@ -30,11 +30,17 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr rough_outlier_cloudptr;
 pcl::PointCloud<pcl::PointXYZ>::Ptr inlier_cloudptr;
 pcl::PointCloud<pcl::PointXYZ>::Ptr outlier_cloudptr;
 
+pcl::PointCloud<pcl::PointXYZ>::Ptr hull_cloudptr;
+
 ros::Publisher inlier_cloud_pub;
 ros::Publisher outlier_cloud_pub;
 
+pcl::ModelCoefficients rough_plane_coefficients;
+pcl::ModelCoefficients rough_line_coefficients;
+
 pcl::ModelCoefficients plane_coefficients;
 pcl::ModelCoefficients line_coefficients;
+
 pcl::ModelCoefficients cylinder_coefficients;
 
 //----------------------------------------------------------------------------
@@ -61,8 +67,12 @@ Eigen::Vector4f maxPoint;
  
 
 double rough_max_cylinder_radius = 0.1; // 05;
+double max_cylinder_radius = 0.05; // 0.03
 
 double cylinder_inlier_distance_threshold = 0.025;
+
+double rough_max_plane_distance = 0.1;
+double max_plane_distance = 0.025;
 
 double ransac_inlier_distance_threshold = 0.05;
 double ransac_inlier_distance_threshold_delta = 0.01;
@@ -125,6 +135,8 @@ void initialize_pcl()
 
   rough_inlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
   rough_outlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+
+  hull_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
 }
 
 //----------------------------------------------------------------------------
@@ -434,7 +446,7 @@ void DeleteSelected()
 
 void DeleteSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-	DeleteSelected();
+  DeleteSelected();
 }
 
 //----------------------------------------------------------------------------
@@ -461,7 +473,7 @@ void DeleteAll()
 
 void DeleteAllCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-	DeleteAll();
+  DeleteAll();
 }
 
 //----------------------------------------------------------------------------
@@ -494,7 +506,7 @@ void MeasureLength()
 
 void MeasureLengthCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-	MeasureLength();
+  MeasureLength();
 }
 
 //----------------------------------------------------------------------------
@@ -517,6 +529,89 @@ void DecreaseInlierDistanceThreshCb( const visualization_msgs::InteractiveMarker
 
 //----------------------------------------------------------------------------
 
+#ifdef PCA_NONSENSE
+
+  // Placeholder for the 3x3 covariance matrix at each surface patch
+  Eigen::Matrix3f covariance_matrix;
+  // 16-bytes aligned placeholder for the XYZ centroid of a surface patch
+  Eigen::Vector4f xyz_centroid;
+
+  // Estimate the XYZ centroid
+  compute3DCentroid (*inlier_cloudptr, xyz_centroid);
+
+  // Compute the 3x3 covariance matrix
+  computeCovarianceMatrix (*inlier_cloudptr, xyz_centroid, covariance_matrix);
+
+  EIGEN_ALIGN16 Eigen::Vector3f::Scalar eigen_value;
+  EIGEN_ALIGN16 Eigen::Vector3f eigen_vector;
+  pcl::eigen33 (covariance_matrix, eigen_value, eigen_vector);
+
+  // smallest eigen_value is square of smallest semi-axis (aka smallest radius)
+
+  cout << "centroid xyz " << endl << xyz_centroid << endl;
+  cout << "cov mat " << endl << covariance_matrix << endl;
+
+  printf("%lf %lf %lf %lf\n", eigen_vector[0],eigen_vector[1],eigen_vector[2],sqrt(eigen_value));
+ 
+  float nx, ny, nz, curvature;
+
+  pcl::solvePlaneParameters(covariance_matrix,
+			    nx, ny, nz, curvature);
+
+  printf("%lf %lf %lf %lf\n", nx, ny, nz, curvature);
+
+
+  // get radius estimate from PCA on inliers?  still slightly biased by outliers, but must be better
+  // than using constant max_cylinder_radius, right?  --provided true radius is <= max_cylinder_radius
+
+  /*
+  pcl::PCA<pcl::PointXYZ> pca;
+  pca.setInputCloud (inlier_cloudptr);
+
+  Eigen::Vector4f mean = pca.getMean();
+  Eigen::Vector3f eigenvalues = pca.getEigenValues();
+  Eigen::Matrix3f eigenvectors = pca.getEigenVectors();
+  */
+
+  Eigen::Vector3f pca_eigenvalues;
+  Eigen::Matrix3f pca_eigenvectors;
+
+ // Compute mean
+  Eigen::Vector4f pca_mean = Eigen::Vector4f::Zero ();
+  compute3DCentroid (*inlier_cloudptr, pca_mean);
+  // Compute demeanished cloud
+  Eigen::MatrixXf cloud_demean;
+  demeanPointCloud (*inlier_cloudptr, pca_mean, cloud_demean);
+
+  //  cout << "demean " << endl << cloud_demean << endl;
+
+  // Compute the product cloud_demean * cloud_demean^T
+  Eigen::Matrix3f alpha = static_cast<Eigen::Matrix3f> (cloud_demean.topRows<3> () * cloud_demean.topRows<3> ().transpose ());
+
+  cout << "alpha " << endl << alpha << endl;
+
+  // Compute eigen vectors and values
+  Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> evd (covariance_matrix);
+  //  Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> evd (alpha);
+  // Organize eigenvectors and eigenvalues in ascendent order
+  for (int i = 0; i < 3; ++i)
+  {
+    pca_eigenvalues[i] = evd.eigenvalues () [2-i];
+    pca_eigenvectors.col (i) = evd.eigenvectors ().col (2-i);
+  }
+
+  cout << "pca mean " << endl << pca_mean << endl;
+  cout << "pca eigenvalues " << endl << pca_eigenvalues << endl;
+  cout << "pca eigenvectors " << endl << pca_eigenvectors << endl;
+
+
+  //  printf("%.3lf %.3lf %.3lf\n", eigenvalues(0), eigenvalues(1), eigenvalues(2));
+
+
+#endif
+
+//----------------------------------------------------------------------------
+
 // parametrize (if n = 2) or fit (n >= 3) LINE to all ud_cursor points
 
 void EstimateLine()
@@ -533,33 +628,67 @@ void EstimateLine()
   robust_line_fit(*cursor_cloudptr,
 		  *inlier_cloudptr,
 		  *outlier_cloudptr,
-		  line_coefficients,
+		  rough_line_coefficients,
 		  ransac_inlier_distance_threshold);
 
   // use its endpoints and a max radius to crop input point cloud to cylindrical volume of interest (VOI)
 
   double min_xp, max_xp;
-  compute_line_limits(cursor_cloudptr, line_coefficients, min_xp, max_xp);
+  //  compute_line_limits(cursor_cloudptr, line_coefficients, min_xp, max_xp);
+  compute_line_limits(inlier_cloudptr, rough_line_coefficients, min_xp, max_xp);
 
   cylinder_slice(*input_cloudptr,
 		 *rough_inlier_cloudptr,
 		 *rough_outlier_cloudptr,
-		 line_coefficients,
+		 rough_line_coefficients,
 		 rough_max_cylinder_radius,
 		 min_xp, max_xp);
 
+  // fit again to get finer estimate
+
+  robust_line_fit(*rough_inlier_cloudptr,
+		  *inlier_cloudptr,
+		  *outlier_cloudptr,
+		  line_coefficients,
+		  max_cylinder_radius);
+
+  compute_line_limits(inlier_cloudptr, line_coefficients, min_xp, max_xp);
+
+  //    pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
+
+  double mean_radius = mean_pointcloud_distance_to_3D_line(inlier_cloudptr, line_coefficients);
+
+  printf("mean dist = %lf\n", mean_radius);
+
+  /*
+  robust_cylinder_fit(*inlier_cloudptr,
+		      *rough_inlier_cloudptr,
+		      *rough_outlier_cloudptr,
+		      cylinder_coefficients,
+		      0.01, max_cylinder_radius); // cylinder_inlier_distance_threshold);
+  */
+
+
   send_cylinder_marker(line_coefficients,
-		       rough_max_cylinder_radius,
+		       mean_radius, // max_cylinder_radius,
 		       min_xp, max_xp,
 		       1.0, 0.0, 0.0, 0.5);
 
+  inlier_cloudptr->header.frame_id = "base_link";
+  inlier_cloud_pub.publish(*inlier_cloudptr);
+
+  outlier_cloudptr->header.frame_id = "base_link";
+  outlier_cloud_pub.publish(*outlier_cloudptr);
+
   //  rough_cylinder_marker_pub.publish();
 
-  rough_inlier_cloudptr->header.frame_id = "base_link";
-  inlier_cloud_pub.publish(*rough_inlier_cloudptr);
+  /*
+  inlier_cloudptr->header.frame_id = "base_link";
+  inlier_cloud_pub.publish(*inlier_cloudptr);
 
-  rough_outlier_cloudptr->header.frame_id = "base_link";
-  outlier_cloud_pub.publish(*rough_outlier_cloudptr);
+  outlier_cloudptr->header.frame_id = "base_link";
+  outlier_cloud_pub.publish(*outlier_cloudptr);
+  */
 
   // now more exactly get the parameters of a cylindrical cluster within the VOI
 
@@ -655,7 +784,7 @@ void EstimateLine()
 
 void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-	EstimateLine();
+  EstimateLine();
 }
 
 //----------------------------------------------------------------------------
@@ -668,6 +797,8 @@ void EstimatePlane()
 
   for (int i = 0; i < ud_cursor_pts.size(); i++)
     cursor_cloudptr->points.push_back(ud_cursor_pts[i]);
+  
+  // this is just on the cursor points
 
   robust_plane_fit(*cursor_cloudptr,
 		   *inlier_cloudptr,
@@ -675,11 +806,57 @@ void EstimatePlane()
 		   plane_coefficients,
 		   ransac_inlier_distance_threshold);
 
+
+  pcl::ConvexHull<pcl::PointXYZ> hull;
+  hull.setInputCloud (inlier_cloudptr);
+  hull.reconstruct(*hull_cloudptr);
+  if (hull.getDimension () == 2) {
+    printf("hull points are 2-D\n");
+
+    pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
+    prism.setInputCloud (input_cloudptr);
+    prism.setInputPlanarHull (hull_cloudptr);
+    prism.setHeightLimits (-rough_max_plane_distance, rough_max_plane_distance);
+    pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
+
+    prism.segment (*inliers);
+    
+    pcl::ExtractIndices<pcl::PointXYZ> extract;
+    
+    rough_inlier_cloudptr->clear();
+    rough_outlier_cloudptr->clear();
+    
+    extract.setInputCloud(input_cloudptr->makeShared());
+    extract.setIndices(inliers);
+    extract.setNegative(false);
+    extract.filter(*rough_inlier_cloudptr);
+
+    extract.setNegative (true);
+    extract.filter (*rough_outlier_cloudptr);
+
+    printf("rough plane: %i in, %i out\n", rough_inlier_cloudptr->points.size(), rough_outlier_cloudptr->points.size());
+ 
+    robust_plane_fit(*rough_inlier_cloudptr,
+		     *inlier_cloudptr,
+		     *outlier_cloudptr,
+		     plane_coefficients,
+		     max_plane_distance);
+
+    printf("fine plane: %i in, %i out\n", inlier_cloudptr->points.size(), outlier_cloudptr->points.size());
+
+  }
+  else {
+    printf("hull points are %i-D, should be 2-D\n", hull.getDimension());
+    return;
+  }
+
+  /*
   plane_slice(*input_cloudptr,
 	      *inlier_cloudptr,
 	      *outlier_cloudptr,
 	      plane_coefficients,
-	      0.1);
+	      rough_max_plane_distance);
+  */
 
   inlier_cloudptr->header.frame_id = "base_link";
   inlier_cloud_pub.publish(inlier_cloudptr);
@@ -771,7 +948,7 @@ void EstimateCircle()
 
 void EstimateCircleCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-	EstimateCircle();
+  EstimateCircle();
 }
 
 //----------------------------------------------------------------------------
@@ -805,7 +982,7 @@ void Crop()
 
 void CropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-	Crop();
+  Crop();
 }
 
 //----------------------------------------------------------------------------
@@ -822,28 +999,31 @@ void UndoCrop()
 
 }
 
-
 void UndoCropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-	UndoCrop();
+  UndoCrop();
 }
 
 //----------------------------------------------------------------------------
 
 // set flag to interpret next click as movement of selected point rather than addition of new point
 
-void MoveSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+void MoveSelected()
 {
-  MenuHandler::EntryHandle handle = feedback->menu_entry_id;
+  //  MenuHandler::EntryHandle handle = feedback->menu_entry_id;
   MenuHandler::CheckState state;
-  menu_handler.getCheckState( handle, state );
+  //  menu_handler.getCheckState( handle, state );
+
+  menu_handler.getCheckState(h_move_entry, state);
 
   if ( state == MenuHandler::CHECKED ) {
-    menu_handler.setCheckState( handle, MenuHandler::UNCHECKED );
+    //    menu_handler.setCheckState( handle, MenuHandler::UNCHECKED );
+    menu_handler.setCheckState( h_move_entry, MenuHandler::UNCHECKED );
     ud_cursor_pt_do_move = false;
   }
   else if (ud_cursor_pts.size() > 0) {
-    menu_handler.setCheckState( handle, MenuHandler::CHECKED );
+    //    menu_handler.setCheckState( handle, MenuHandler::CHECKED );
+    menu_handler.setCheckState( h_move_entry, MenuHandler::CHECKED );
     ud_cursor_pt_do_move = true;
   }
 
@@ -854,6 +1034,11 @@ void MoveSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
 
   send_ud_cursor_point_markers();
 
+}
+
+void MoveSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  MoveSelected();
 }
 
 //----------------------------------------------------------------------------
@@ -1669,39 +1854,49 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
 
 void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
 {
-	// Just need to hook these up to the proper functions
-	if(msg.RemoveAllPoints == 1)
-	{
-		DeleteAll();
-	}
-	else if (msg.RemoveLastPoint == 1)
-	{
-		DeleteSelected();
-	}
-	else if (msg.EstimatePlane == 1)
-	{
-		EstimatePlane();
-	}
-	else if (msg.EstimateLine == 1)
-	{
-		EstimateLine();
-	}
-	else if (msg.MeasureLength == 1)
-	{
-		MeasureLength();
-	}
-	else if (msg.Crop == 1)
-	{
-		Crop();
-	}
-	else if (msg.Undo == 1)
-	{
-		UndoCrop();
-	}
-	else
-	{
-		cout << "Didn't understand the measurement_command ros msg." << endl;
-	}
+  // parameters
+
+  // commands -- only one should be true
+
+  if (msg.MoveSelected == 1) {
+    MoveSelected();
+    return;
+  }
+  else if (msg.DeleteAll == 1) {
+    DeleteAll();
+    return;
+  }
+  else if (msg.DeleteSelected == 1) {
+    DeleteSelected();
+    return;
+  }
+  else if (msg.EstimatePlane == 1) {
+    EstimatePlane();
+    return;
+  }
+  else if (msg.EstimateLine == 1) {
+    EstimateLine();
+    return;
+  }
+  else if (msg.EstimateCircle == 1) {
+    EstimateCircle();
+    return;
+  }
+  else if (msg.MeasureLength == 1) {
+    MeasureLength();
+    return;
+  }
+  else if (msg.Crop == 1) {
+    Crop();
+    return;
+  }
+  else if (msg.Undo == 1) {
+    UndoCrop();
+    return;
+  }
+  else {
+    cout << "Didn't understand the measurement_command ros msg." << endl;
+  }
 }
 
 //----------------------------------------------------------------------------

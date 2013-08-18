@@ -11,6 +11,8 @@
 #include <std_msgs/String.h>
 #include <geometry_msgs/PointStamped.h>
 
+#include <pcl/common/pca.h>
+
 #include <interactive_markers/interactive_marker_server.h>
 #include <interactive_markers/menu_handler.h>
 
@@ -36,7 +38,10 @@
 #include <pcl/sample_consensus/method_types.h>
 #include <pcl/sample_consensus/model_types.h>
 #include <pcl/sample_consensus/sac_model_plane.h>
+
 #include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/segmentation/extract_polygonal_prism_data.h>
+
 #include <pcl/ModelCoefficients.h>
 
 #include <pcl/features/normal_3d.h>
@@ -51,6 +56,7 @@
 #include <pcl/surface/gp3.h>
 #include <pcl/surface/poisson.h>
 #include <pcl/surface/marching_cubes_rbf.h>
+#include <pcl/surface/convex_hull.h>
 
 #include <tf/transform_listener.h>
 #include <tf/transform_broadcaster.h>
@@ -121,7 +127,7 @@ bool robust_cylinder_fit(pcl::PointCloud<pcl::PointXYZ> &,
 			 pcl::PointCloud<pcl::PointXYZ> &,
 			 pcl::PointCloud<pcl::PointXYZ> &,
 			 pcl::ModelCoefficients &,
-			 double);
+			 double, double);
 			 
 bool robust_circle_fit(pcl::PointCloud<pcl::PointXYZ> &,
 			 pcl::PointCloud<pcl::PointXYZ> &,
@@ -129,6 +135,9 @@ bool robust_circle_fit(pcl::PointCloud<pcl::PointXYZ> &,
 			 pcl::ModelCoefficients &,
 			 double,
                          double);
+
+double mean_pointcloud_distance_to_3D_line(pcl::PointCloud<pcl::PointXYZ>::Ptr,
+					   pcl::ModelCoefficients &);
 
 void compute_line_limits(pcl::PointCloud<pcl::PointXYZ>::Ptr,
 			 pcl::ModelCoefficients &,

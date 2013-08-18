@@ -6,6 +6,68 @@
 
 //----------------------------------------------------------------------------
 
+// how far is P from the line defined by Pu, Pv?  The distance between Pu and Pv
+// is precalculated in Pu_Pv_dist for convenience
+
+// all points are 3-D
+
+// using the formula from this page:
+// http://mathworld.wolfram.com/Point-LineDistance3-Dimensional.html
+
+// | (P - Pu) x (P - Pv) | / Pu_Pv_dist
+ 
+double distance_to_3D_line(Eigen::Vector3f & P, Eigen::Vector3f Pu, Eigen::Vector3f & Pv, double Pu_Pv_dist)
+{
+  Eigen::Vector3f P_minus_Pu = P - Pu;
+  Eigen::Vector3f P_minus_Pv = P - Pv;
+
+  Eigen::Vector3f crossvec = P_minus_Pu.cross(P_minus_Pv);
+  
+  return crossvec.norm() / Pu_Pv_dist;
+}
+
+//----------------------------------------------------------------------------
+
+double mean_pointcloud_distance_to_3D_line(pcl::PointCloud<pcl::PointXYZ>::Ptr cloudptr,
+					   pcl::ModelCoefficients & line_coefficients)
+{
+  Eigen::Vector3f Pu(line_coefficients.values[0], line_coefficients.values[1], line_coefficients.values[2]);
+  Eigen::Vector3f Ldir(line_coefficients.values[3], line_coefficients.values[4], line_coefficients.values[5]);
+  Ldir.normalize();
+  Eigen::Vector3f Pv = Pu + Ldir;
+  double dist;
+
+  cout << "Pu " << Pu << endl;
+  cout << "Pv " << Pu << endl;
+
+  double total_distance = 0.0;
+
+  Eigen::Vector3f P;
+
+  int num_good = 0;
+
+  for (int i = 0; i < cloudptr->points.size(); i++) {
+
+    P(0) = cloudptr->points[i].x;
+    P(1) = cloudptr->points[i].y;
+    P(2) = cloudptr->points[i].z;
+
+    if (isnan(P(0)) || isnan(P(1)) || isnan(P(2)))
+      continue;
+
+    dist = distance_to_3D_line(P, Pu, Pv, 1.0); 
+
+    cout << "P " << P << endl << " dist = " << dist << endl;
+
+    total_distance += dist;
+    num_good++;
+  }
+
+  return total_distance / (double) num_good;
+}
+
+//----------------------------------------------------------------------------
+
 // project each point in line_cloudptr onto line defined by line_coefficients
 // and establish its 1-D position relative to "origin" given by line_coefficients[0-2].
 // then return min and max 1-D positions along line
@@ -41,7 +103,6 @@ void compute_line_limits(pcl::PointCloud<pcl::PointXYZ>::Ptr line_cloudptr,
 // everything within distance *threshold* of LINE is an inlier, everything outside that is an outlier
 
 // basically pcl::SampleConsensusModelLine<PointT>::selectWithinDistance () from sac_model_line.hpp
-
 void cylinder_slice(pcl::PointCloud<pcl::PointXYZ> & cloud,
 		    pcl::PointCloud<pcl::PointXYZ> & cloud_inliers,
 		    pcl::PointCloud<pcl::PointXYZ> & cloud_outliers,
@@ -369,7 +430,7 @@ bool robust_cylinder_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
 			 pcl::PointCloud<pcl::PointXYZ> & cloud_inliers,
 			 pcl::PointCloud<pcl::PointXYZ> & cloud_outliers,
 			 pcl::ModelCoefficients & coefficients,
-			 double threshold)
+			 double threshold, double max_radius)
 {
   int i;
   pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
@@ -381,10 +442,12 @@ bool robust_cylinder_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
   seg.setOptimizeCoefficients (true);
 
   // Mandatory
-  seg.setModelType (pcl::SACMODEL_LINE);
+  seg.setModelType (pcl::SACMODEL_CYLINDER);
+  //  seg.setModelType (pcl::SACMODEL_LINE);
   seg.setMethodType (pcl::SAC_RANSAC);
   seg.setDistanceThreshold (threshold);
-  
+  seg.setRadiusLimits (0, max_radius);
+
   seg.setMaxIterations(500);
   //  seg.setProbability(0.99);
 
