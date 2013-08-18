@@ -37,8 +37,8 @@ double mean_pointcloud_distance_to_3D_line(pcl::PointCloud<pcl::PointXYZ>::Ptr c
   Eigen::Vector3f Pv = Pu + Ldir;
   double dist;
 
-  cout << "Pu " << Pu << endl;
-  cout << "Pv " << Pu << endl;
+  //  cout << "Pu " << Pu << endl;
+  //  cout << "Pv " << Pu << endl;
 
   double total_distance = 0.0;
 
@@ -57,7 +57,7 @@ double mean_pointcloud_distance_to_3D_line(pcl::PointCloud<pcl::PointXYZ>::Ptr c
 
     dist = distance_to_3D_line(P, Pu, Pv, 1.0); 
 
-    cout << "P " << P << endl << " dist = " << dist << endl;
+    //    cout << "P " << P << endl << " dist = " << dist << endl;
 
     total_distance += dist;
     num_good++;
@@ -164,8 +164,12 @@ void plane_slice(pcl::PointCloud<pcl::PointXYZ> & cloud,
 		      pcl::ModelCoefficients & plane_coefficients,
 		      double threshold)
 {
+  //  printf("1\n"); fflush(stdout);
+
   cloud_inliers.points.clear();
   cloud_outliers.points.clear();
+
+  //  printf("2\n"); fflush(stdout);
 
   double dist;
 
@@ -182,6 +186,8 @@ void plane_slice(pcl::PointCloud<pcl::PointXYZ> & cloud,
     else 
       cloud_outliers.points.push_back(cloud.points[i]);
   }
+
+  //  printf("3 in %i, out %i\n", cloud_inliers.points.size(), cloud_outliers.points.size()); fflush(stdout);
 
 }
 

@@ -12,11 +12,16 @@
 
 //----------------------------------------------------------------------------
 
+bool do_clip = false;
+
 // this should change with menu selection
 
 bool do_crop = false;
 
 //----------------------------------------------------------------------------
+
+sensor_msgs::PointCloud2 inlier_cloud_msg;
+sensor_msgs::PointCloud2 outlier_cloud_msg;
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr cursor_cloudptr;
 
@@ -30,6 +35,9 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr rough_outlier_cloudptr;
 pcl::PointCloud<pcl::PointXYZ>::Ptr inlier_cloudptr;
 pcl::PointCloud<pcl::PointXYZ>::Ptr outlier_cloudptr;
 
+pcl::PointCloud<pcl::PointXYZ>::Ptr projected_inlier_cloudptr;
+pcl::PointCloud<pcl::PointXYZ>::Ptr level_inlier_cloudptr;
+
 pcl::PointCloud<pcl::PointXYZ>::Ptr hull_cloudptr;
 
 ros::Publisher inlier_cloud_pub;
@@ -38,8 +46,10 @@ ros::Publisher outlier_cloud_pub;
 pcl::ModelCoefficients rough_plane_coefficients;
 pcl::ModelCoefficients rough_line_coefficients;
 
-pcl::ModelCoefficients plane_coefficients;
+pcl::ModelCoefficients::Ptr plane_coefficients_ptr;
 pcl::ModelCoefficients line_coefficients;
+
+pcl::ModelCoefficients::Ptr ground_plane_coefficients_ptr;
 
 pcl::ModelCoefficients cylinder_coefficients;
 
@@ -124,6 +134,9 @@ pcl::PointCloud< pcl::PointXYZRGB> rviz_pt_filtered;
 
 void initialize_pcl()
 {
+  inlier_cloud_msg.header.frame_id = "base_link";
+  outlier_cloud_msg.header.frame_id = "base_link";
+
   cursor_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
   input_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
@@ -133,10 +146,19 @@ void initialize_pcl()
   inlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
   outlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
+  projected_inlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+  level_inlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+
   rough_inlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
   rough_outlier_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
   hull_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+
+  plane_coefficients_ptr.reset(new pcl::ModelCoefficients);
+  ground_plane_coefficients_ptr.reset(new pcl::ModelCoefficients);
+  ground_plane_coefficients_ptr->values[0] = ground_plane_coefficients_ptr->values[1] = 0.0;
+  ground_plane_coefficients_ptr->values[2] = 1.0;
+  ground_plane_coefficients_ptr->values[3] = 0.0;
 }
 
 //----------------------------------------------------------------------------
@@ -791,7 +813,7 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
 
 // parametrize (if n = 3) or fit (n >= 4) PLANE to all ud_cursor points
 
-void EstimatePlane()
+void EstimatePlane(bool do_publish)
 {
   cursor_cloudptr->points.clear();
 
@@ -803,137 +825,119 @@ void EstimatePlane()
   robust_plane_fit(*cursor_cloudptr,
 		   *inlier_cloudptr,
 		   *outlier_cloudptr,
-		   plane_coefficients,
+		   *plane_coefficients_ptr,
 		   ransac_inlier_distance_threshold);
 
+  // now convex hull + proximity to plane forms polygonal prism to roughly clip the data 
 
   pcl::ConvexHull<pcl::PointXYZ> hull;
   hull.setInputCloud (inlier_cloudptr);
   hull.reconstruct(*hull_cloudptr);
-  if (hull.getDimension () == 2) {
-    printf("hull points are 2-D\n");
 
-    pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
-    prism.setInputCloud (input_cloudptr);
-    prism.setInputPlanarHull (hull_cloudptr);
-    prism.setHeightLimits (-rough_max_plane_distance, rough_max_plane_distance);
-    pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
-
-    prism.segment (*inliers);
-    
-    pcl::ExtractIndices<pcl::PointXYZ> extract;
-    
-    rough_inlier_cloudptr->clear();
-    rough_outlier_cloudptr->clear();
-    
-    extract.setInputCloud(input_cloudptr->makeShared());
-    extract.setIndices(inliers);
-    extract.setNegative(false);
-    extract.filter(*rough_inlier_cloudptr);
-
-    extract.setNegative (true);
-    extract.filter (*rough_outlier_cloudptr);
-
-    printf("rough plane: %i in, %i out\n", rough_inlier_cloudptr->points.size(), rough_outlier_cloudptr->points.size());
- 
-    robust_plane_fit(*rough_inlier_cloudptr,
-		     *inlier_cloudptr,
-		     *outlier_cloudptr,
-		     plane_coefficients,
-		     max_plane_distance);
-
-    printf("fine plane: %i in, %i out\n", inlier_cloudptr->points.size(), outlier_cloudptr->points.size());
-
-  }
-  else {
-    printf("hull points are %i-D, should be 2-D\n", hull.getDimension());
+  if (hull.getDimension () != 2) {
+    printf("hull points are not 2-D...this is a problem\n");
     return;
   }
 
-  /*
-  plane_slice(*input_cloudptr,
-	      *inlier_cloudptr,
-	      *outlier_cloudptr,
-	      plane_coefficients,
-	      rough_max_plane_distance);
-  */
-
-  inlier_cloudptr->header.frame_id = "base_link";
-  inlier_cloud_pub.publish(inlier_cloudptr);
-
-  outlier_cloudptr->header.frame_id = "base_link";
-  outlier_cloud_pub.publish(*outlier_cloudptr);
-
-  /*
-
-  if (ud_cursor_pts.size() < 3)
-    printf("need at least 3 points to parametrize a plane\n");
-  
-  //RANSAC seems to work fine even on 3 points.  It just returns the a, b, c, and d values for the plane that is determined by them.
-  else {
-    
-  pcl::PointCloud<pcl::PointXYZ> cloud;
-
-  // Fill in the cloud data
-  cloud.width  = ud_cursor_pts.size();
-  cloud.height = 1;
-  cloud.points.resize (cloud.width * cloud.height);
-
-  for (size_t i = 0; i < cloud.points.size (); ++i)
-  {
-    cloud.points[i].x = ud_cursor_pts[i].x;
-    cloud.points[i].y = ud_cursor_pts[i].y;
-    cloud.points[i].z = ud_cursor_pts[i].z;
-  }
-  
-  std::cerr << "Point cloud data: " << cloud.points.size () << " points" << std::endl;
-  for (size_t i = 0; i < cloud.points.size (); ++i)
-    std::cerr << "    " << cloud.points[i].x << " " 
-                        << cloud.points[i].y << " " 
-                        << cloud.points[i].z << std::endl;
-
-  pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
+  pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
+  prism.setInputCloud (input_cloudptr);
+  prism.setInputPlanarHull (hull_cloudptr);
+  prism.setHeightLimits (-rough_max_plane_distance, rough_max_plane_distance);
   pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
-  // Create the segmentation object
-  pcl::SACSegmentation<pcl::PointXYZ> seg;
-  // Optional
-  seg.setOptimizeCoefficients (true);
-  // Mandatory
-  seg.setModelType (pcl::SACMODEL_PLANE);
-  seg.setMethodType (pcl::SAC_RANSAC);
-  seg.setDistanceThreshold (ransac_inlier_distance_threshold);
 
-  seg.setInputCloud (cloud.makeShared ());
-  seg.segment (*inliers, *coefficients);
+  // do the clip on entire point cloud
 
-  if (inliers->indices.size () == 0)
-  {
-    PCL_ERROR ("Could not estimate a planar model for the given dataset.");
+  prism.segment (*inliers);
+  
+  pcl::ExtractIndices<pcl::PointXYZ> extract;
+  
+  rough_inlier_cloudptr->clear();
+  rough_outlier_cloudptr->clear();
+  
+  extract.setInputCloud(input_cloudptr->makeShared());
+  extract.setIndices(inliers);
+  extract.setNegative(false);
+  extract.filter(*rough_inlier_cloudptr);
+  
+  extract.setNegative (true);
+  extract.filter (*rough_outlier_cloudptr);
+  
+  //  printf("rough polygonal prism: %i in, %i out\n", rough_inlier_cloudptr->points.size(), rough_outlier_cloudptr->points.size());
+
+  // proximity to original plane was loose, and there weren't that many cursor points, so fit again 
+
+  robust_plane_fit(*rough_inlier_cloudptr,
+		   *inlier_cloudptr,
+		   *outlier_cloudptr,
+		   *plane_coefficients_ptr,
+		   max_plane_distance);
+  
+  //  printf("fine plane: %i in, %i out\n", inlier_cloudptr->points.size(), outlier_cloudptr->points.size()); fflush(stdout);
+
+  // publish inliers and outliers for...
+
+  // ...just points inside convex hull
+
+  if (do_clip) {
+
+    if (do_publish) {
+      inlier_cloudptr->header.frame_id = "base_link";
+      inlier_cloud_pub.publish(*inlier_cloudptr);
+      
+      outlier_cloudptr->header.frame_id = "base_link";
+      outlier_cloud_pub.publish(*outlier_cloudptr);
+    }
   }
 
-  std::cerr << "Model coefficients: " << coefficients->values[0] << " " 
-                                      << coefficients->values[1] << " "
-                                      << coefficients->values[2] << " " 
-                                      << coefficients->values[3] << std::endl;
+  // ...entire data set (this is like ExtractPolygonalPrism() without the polygonal boundaries)
+  
+  else {
 
-  std::cerr << "Model inliers: " << inliers->indices.size () << std::endl;
-  for (size_t i = 0; i < inliers->indices.size (); ++i)
-    std::cerr << inliers->indices[i] << "    " << cloud.points[inliers->indices[i]].x << " "
-                                               << cloud.points[inliers->indices[i]].y << " "
-                                               << cloud.points[inliers->indices[i]].z << std::endl;
+    //    printf("a\n"); fflush(stdout);
 
- 
+    plane_slice(*input_cloudptr,
+		*rough_inlier_cloudptr,
+		*rough_outlier_cloudptr,
+		*plane_coefficients_ptr,
+		max_plane_distance);
 
-}
-  */
+    if (do_publish) {
 
+      rough_inlier_cloudptr->width = rough_inlier_cloudptr->height = 0;
+      //    printf("b w %i h %i size %i\n", rough_inlier_cloudptr->width,rough_inlier_cloudptr->height,rough_inlier_cloudptr->points.size() ); fflush(stdout);
+      
+      pcl::toROSMsg(*rough_inlier_cloudptr, inlier_cloud_msg);
+      inlier_cloud_pub.publish(inlier_cloud_msg);
+      
+      /*
+	rough_inlier_cloudptr->header.frame_id = "base_link";
+	inlier_cloud_pub.publish(*rough_inlier_cloudptr);
+      */
+      
+      
+      //    printf("c\n"); fflush(stdout);
+      
+      rough_outlier_cloudptr->width = rough_outlier_cloudptr->height = 0;
+      
+      pcl::toROSMsg(*rough_outlier_cloudptr, outlier_cloud_msg);
+      outlier_cloud_pub.publish(outlier_cloud_msg);
+
+    /*
+    rough_outlier_cloudptr->header.frame_id = "base_link";
+    outlier_cloud_pub.publish(*rough_outlier_cloudptr);
+    */
+
+    //    printf("d\n"); fflush(stdout);
+    }
+
+  }
 }
 
 // parametrize (if n = 3) or fit (n >= 4) PLANE to all ud_cursor points
 
 void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-  EstimatePlane();
+  EstimatePlane(true);
 }
 
 //----------------------------------------------------------------------------
@@ -942,7 +946,23 @@ void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
 
 void EstimateCircle()
 {
-//TODO ADD CIRCLE CODE HERE
+  EstimatePlane(false);
+
+  // Create the filtering object
+
+  pcl::ProjectInliers<pcl::PointXYZ> proj;
+  proj.setModelType (pcl::SACMODEL_PLANE);
+  proj.setInputCloud (rough_inlier_cloudptr);
+  proj.setModelCoefficients (plane_coefficients_ptr);
+  proj.filter (*projected_inlier_cloudptr);
+
+  transform_to_level(*projected_inlier_cloudptr, *level_inlier_cloudptr, *plane_coefficients_ptr);
+
+  //  rough_inlier_cloudptr->width = rough_inlier_cloudptr->height = 0;
+  //  pcl::toROSMsg(*rough_inlier_cloudptr, inlier_cloud_msg);
+  pcl::toROSMsg(*level_inlier_cloudptr, inlier_cloud_msg);
+  inlier_cloud_pub.publish(inlier_cloud_msg);
+      
 
 }
 
@@ -1871,7 +1891,7 @@ void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
     return;
   }
   else if (msg.EstimatePlane == 1) {
-    EstimatePlane();
+    EstimatePlane(true);
     return;
   }
   else if (msg.EstimateLine == 1) {

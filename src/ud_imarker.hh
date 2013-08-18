@@ -32,6 +32,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/crop_box.h>
+#include <pcl/filters/project_inliers.h>
 
 #include <pcl/filters/extract_indices.h>
 
