@@ -6,6 +6,7 @@
 //----------------------------------------------------------------------------
 
 #include "ud_imarker.hh"
+#include "ud_measurement_panel/MeasurementCommand.h"
 
 // rosrun pcl_ros pcd_to_pointcloud golfcart_pillar1_hokuyo.pcd 1
 
@@ -82,6 +83,7 @@ ros::Publisher outliers_cloud_pub;
 ros::NodeHandle *nhp;
 ros::Subscriber click_sub;
 ros::Subscriber ptcloud_sub;
+ros::Subscriber measurement_sub;
 
 float cpdist=0; //Current frame
 float globalscale = 1;  //What are the units on this? -Brad
@@ -401,7 +403,7 @@ void makeMenuMarker( std::string name )
 // get rid of the ud_cursor point that is currently selected (last added by default
 // unless an existing one is clicked on)
 
-void DeleteSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+void DeleteSelected()
 {
   if (ud_cursor_pt_selection_index >= 0 && ud_cursor_pt_selection_index < ud_cursor_pts.size()) {
     
@@ -430,11 +432,16 @@ void DeleteSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstP
   //  ROS_INFO("The delete last sub-menu has been found.");
 }
 
+void DeleteSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+	DeleteSelected();
+}
+
 //----------------------------------------------------------------------------
 
 // get rid of every ud_cursor point we have stored
 
-void DeleteAllCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+void DeleteAll()
 {
   ud_cursor_pts.clear();
 
@@ -452,11 +459,16 @@ void DeleteAllCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &f
   //  ROS_INFO("The delete all sub-menu has been found.");
 }
 
+void DeleteAllCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+	DeleteAll();
+}
+
 //----------------------------------------------------------------------------
 
 // treat all ud_cursor points as polyline and calculated its total length
 
-void MeasureLengthCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+void MeasureLength() 
 {
   double dx, dy, dz;
   double total_length = 0.0;
@@ -478,6 +490,11 @@ void MeasureLengthCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
 
   }
 
+}
+
+void MeasureLengthCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+	MeasureLength();
 }
 
 //----------------------------------------------------------------------------
@@ -502,8 +519,7 @@ void DecreaseInlierDistanceThreshCb( const visualization_msgs::InteractiveMarker
 
 // parametrize (if n = 2) or fit (n >= 3) LINE to all ud_cursor points
 
-
-void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+void EstimateLine()
 {
   int i;
 
@@ -634,11 +650,19 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
   */
 }
 
+// parametrize (if n = 2) or fit (n >= 3) LINE to all ud_cursor points
+
+
+void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+	EstimateLine();
+}
+
 //----------------------------------------------------------------------------
 
 // parametrize (if n = 3) or fit (n >= 4) PLANE to all ud_cursor points
 
-void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+void EstimatePlane()
 {
   cursor_cloudptr->points.clear();
 
@@ -728,21 +752,33 @@ void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
 
 }
 
+// parametrize (if n = 3) or fit (n >= 4) PLANE to all ud_cursor points
+
+void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+  EstimatePlane();
+}
+
 //----------------------------------------------------------------------------
 
 // parametrize (if n = 3) or fit (n >= 4) 3-D CIRCLE to all ud_cursor points
 
+void EstimateCircle()
+{
+//TODO ADD CIRCLE CODE HERE
+
+}
+
 void EstimateCircleCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-
-
+	EstimateCircle();
 }
 
 //----------------------------------------------------------------------------
 
 // Crop the pointcloud and republish to ud_output
 
-void CropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+void Crop()
 {
 
 
@@ -767,9 +803,14 @@ void CropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedba
     }
 }
 
+void CropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+	Crop();
+}
+
 //----------------------------------------------------------------------------
 
-void UndoCropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+void UndoCrop()
 {
     minPoint[0]=-999; 
     minPoint[1]=-999; 
@@ -779,6 +820,12 @@ void UndoCropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &fe
     maxPoint[1]=999; 
     maxPoint[2]=999;  
 
+}
+
+
+void UndoCropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+	UndoCrop();
 }
 
 //----------------------------------------------------------------------------
@@ -1619,6 +1666,46 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
 
 //----------------------------------------------------------------------------
 
+
+void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
+{
+	// Just need to hook these up to the proper functions
+	if(msg.RemoveAllPoints == 1)
+	{
+		DeleteAll();
+	}
+	else if (msg.RemoveLastPoint == 1)
+	{
+		DeleteSelected();
+	}
+	else if (msg.EstimatePlane == 1)
+	{
+		EstimatePlane();
+	}
+	else if (msg.EstimateLine == 1)
+	{
+		EstimateLine();
+	}
+	else if (msg.MeasureLength == 1)
+	{
+		MeasureLength();
+	}
+	else if (msg.Crop == 1)
+	{
+		Crop();
+	}
+	else if (msg.Undo == 1)
+	{
+		UndoCrop();
+	}
+	else
+	{
+		cout << "Didn't understand the measurement_command ros msg." << endl;
+	}
+}
+
+//----------------------------------------------------------------------------
+
 int main( int argc, char** argv )
 {
   initialize_pcl();
@@ -1671,6 +1758,9 @@ int main( int argc, char** argv )
   click_sub = nhp->subscribe("ud_clicked_point", 10, clickCallback);
 
   ptcloud_sub = nhp->subscribe("cloud_pcd", 10, ptcloudCallback);
+  
+  //add a subscriber to listen for things that are clicked on in the measurement panel
+  measurement_sub = nhp->subscribe("measurement_command", 10, panelCallback);
   
 
   ros::Rate UD_rviz_interaction_rate(30);
