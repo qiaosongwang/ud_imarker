@@ -59,7 +59,7 @@ Eigen::Vector4f minPoint;
 Eigen::Vector4f maxPoint;
  
 
-double max_cylinder_radius = 0.05;
+double rough_max_cylinder_radius = 0.1; // 05;
 
 double cylinder_inlier_distance_threshold = 0.025;
 
@@ -140,15 +140,28 @@ void send_cylinder_marker(pcl::ModelCoefficients & coefficients,
   cyl.ns="UD_rviz_interaction";
   cyl.action=visualization_msgs::Marker::ADD;
 
-  cyl.pose.position.x = coefficients.values[0];
-  cyl.pose.position.y = coefficients.values[1];
-  cyl.pose.position.z = coefficients.values[2];
+  printf("%.3lf %.3lf %.3lf = %.3lf [%.3lf min, %.3lf max]\n", 
+	 coefficients.values[3],
+	 coefficients.values[4],
+	 coefficients.values[5],
+	 coefficients.values[3]*coefficients.values[3]+coefficients.values[4]*coefficients.values[4]+coefficients.values[5]*coefficients.values[5],
+	 min_xp,
+	 max_xp);
 
-  cyl.pose.orientation.x =0.0;
-  cyl.pose.orientation.y =0.0;
-  cyl.pose.orientation.z =0.0;
-  cyl.pose.orientation.w =1.0;
+  cyl.pose.position.x = coefficients.values[0] + 0.5 * (max_xp + min_xp) * coefficients.values[3];
+  cyl.pose.position.y = coefficients.values[1] + 0.5 * (max_xp + min_xp) * coefficients.values[4];
+  cyl.pose.position.z = coefficients.values[2] + 0.5 * (max_xp + min_xp) * coefficients.values[5];
+
+  //  tf::Quaternion q = shortest_rotation_quaternion(-coefficients.values[3], -coefficients.values[4], -coefficients.values[5], 0, 0, 1);
+  tf::Quaternion q = shortest_rotation_quaternion(0, 0, 1,
+						  coefficients.values[3], coefficients.values[4], coefficients.values[5]);
+ 
+  cyl.pose.orientation.x =q.x();
+  cyl.pose.orientation.y =q.y();
+  cyl.pose.orientation.z =q.z();
+  cyl.pose.orientation.w =q.w();
   
+
   //ID
 
   cyl.id =33;
@@ -516,11 +529,11 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
 		 *rough_inlier_cloudptr,
 		 *rough_outlier_cloudptr,
 		 line_coefficients,
-		 max_cylinder_radius,
+		 rough_max_cylinder_radius,
 		 min_xp, max_xp);
 
   send_cylinder_marker(line_coefficients,
-		       max_cylinder_radius,
+		       rough_max_cylinder_radius,
 		       min_xp, max_xp,
 		       1.0, 0.0, 0.0, 0.5);
 

@@ -48,6 +48,15 @@
 #include <pcl/surface/poisson.h>
 #include <pcl/surface/marching_cubes_rbf.h>
 
+#include <tf/transform_listener.h>
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_datatypes.h>
+
+#include <tf_conversions/tf_eigen.h>
+
+#include "pcl_ros/transforms.h"
+#include <pcl/ros/conversions.h>
+
 #include <Eigen/Core>
 
 #include <boost/foreach.hpp>
@@ -105,6 +114,10 @@ bool robust_cylinder_fit(pcl::PointCloud<pcl::PointXYZ> &,
 void compute_line_limits(pcl::PointCloud<pcl::PointXYZ>::Ptr,
 			 pcl::ModelCoefficients &,
 			 double &, double &);
+
+void transform_to_level(pcl::PointCloud<pcl::PointXYZ> &, pcl::PointCloud<pcl::PointXYZ> &, pcl::ModelCoefficients &);
+void transform_to_level(pcl::PointCloud<pcl::PointXYZ> &, pcl::PointCloud<pcl::PointXYZ> &, double, double, double, double);
+tf::Quaternion shortest_rotation_quaternion(double, double, double, double, double, double);
 
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------

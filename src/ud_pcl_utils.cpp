@@ -484,4 +484,44 @@ bool robust_cylinder_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
 }
 
 //----------------------------------------------------------------------------
+
+void transform_to_level(pcl::PointCloud<pcl::PointXYZ> & cloud_in, pcl::PointCloud<pcl::PointXYZ> & cloud_out, pcl::ModelCoefficients & plane_coefficients)
+{
+  transform_to_level(cloud_in, cloud_out, 
+		     plane_coefficients.values[0], plane_coefficients.values[1], plane_coefficients.values[2], plane_coefficients.values[3]);
+}
+
+//----------------------------------------------------------------------------
+
+// rotate AND translate to correct height given plane equation
+
+// http://www.gamedev.net/topic/429507-finding-the-quaternion-betwee-two-vectors/#entry3856228
+
+void transform_to_level(pcl::PointCloud<pcl::PointXYZ> & cloud_in, pcl::PointCloud<pcl::PointXYZ> & cloud_out, double a, double b, double c, double d)
+{
+  tf::Transform xform(shortest_rotation_quaternion(a, b, c, 0, 0, 1),
+		      tf::Vector3(0, 0, d));
+
+  pcl_ros::transformPointCloud(cloud_in, cloud_out, xform);
+}
+
+
+//----------------------------------------------------------------------------
+
+// shortest rotation between two 3-D vectors (e.g., normals)
+
+tf::Quaternion shortest_rotation_quaternion(double a1, double b1, double c1,
+					    double a2, double b2, double c2)
+{
+  Eigen::Vector3d v1(a1, b1, c1);
+  Eigen::Vector3d v2(a2, b2, c2);
+  Eigen::Vector3d cr = v1.cross(v2);
+
+  tf::Quaternion q(cr(0), cr(1), cr(2), 1 + v1.dot(v2));
+  q.normalize();
+
+  return q;
+}
+
+//----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
