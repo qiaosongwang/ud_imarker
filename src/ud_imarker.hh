@@ -180,10 +180,23 @@ Eigen::Matrix4f final_transform (
         pcl::PointCloud<pcl::PointXYZI>::Ptr
         );
 
+pcl::PointCloud<pcl::PointXYZI>::Ptr voxel_keypoints(
+	pcl::PointCloud<pcl::PointXYZRGB>::Ptr,
+	pcl::PointCloud<pcl::PointXYZI>::Ptr, 
+	double 
+        );
+
 bool sift_registration (
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr,
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr,
-        pcl::PointCloud<pcl::PointXYZRGB>::Ptr );
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr
+        );
+
+bool  icp_registration (
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr ,
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr ,
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr 
+        );
 
 void transform_to_level(pcl::PointCloud<pcl::PointXYZ> &, pcl::PointCloud<pcl::PointXYZ> &, pcl::ModelCoefficients &);
 void transform_to_level(pcl::PointCloud<pcl::PointXYZ> &, pcl::PointCloud<pcl::PointXYZ> &, double, double, double, double);
