@@ -8,7 +8,27 @@
 #include "ud_imarker.hh"
 #include "ud_measurement_panel/MeasurementCommand.h"
 
+//----------------------------------------------------------------------------
+
 // rosrun pcl_ros pcd_to_pointcloud golfcart_pillar1_hokuyo.pcd 1
+// rosrun pcl_ros pcd_to_pointcloud path1_vehicle_only_KINFU.pcd 1
+
+bool have_scene_cloud = false;   // this becomes true when either a message arrives or we
+                                 // load a .pcd locally
+
+bool have_object_cloud = false;
+
+//----------------------------------------------------------------------------
+
+// a vehicle object
+
+bool do_load_kinfu_vehicle = false;
+
+// various scenes
+
+bool do_load_armory_golf = false;
+bool do_load_tepra_PS = false;
+bool do_load_tepra_DS = false;
 
 //----------------------------------------------------------------------------
 
@@ -23,9 +43,26 @@ bool do_crop = false;
 sensor_msgs::PointCloud2 inlier_cloud_msg;
 sensor_msgs::PointCloud2 outlier_cloud_msg;
 
+sensor_msgs::PointCloud2 input_cloud_msg;
+sensor_msgs::PointCloud2 object_cloud_msg;
+
+//----------------------------------------------------------------------------
+
+//pcl::PointCloud<pcl::PointXYZ>::Ptr scene_cloudptr;
+
+pcl::PointCloud<pcl::PointXYZ>::Ptr raw_object_cloudptr;
+pcl::PointCloud<pcl::PointXYZ>::Ptr object_cloudptr;
+
 pcl::PointCloud<pcl::PointXYZ>::Ptr cursor_cloudptr;
 
+// aka the scene
+pcl::PointCloud<pcl::PointXYZI>::Ptr raw_xyzi_input_cloudptr;
+pcl::PointCloud<pcl::PointXYZI>::Ptr xyzi_input_cloudptr;
+
+pcl::PointCloud<pcl::PointXYZ>::Ptr raw_input_cloudptr;
 pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloudptr;
+
+pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloudptr;
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr input_cropped_cloudptr;
 
@@ -40,14 +77,23 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr level_inlier_cloudptr;
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr hull_cloudptr;
 
+//----------------------------------------------------------------------------
+
+ros::Publisher input_cloud_pub;
+ros::Publisher object_cloud_pub;
+
 ros::Publisher inlier_cloud_pub;
 ros::Publisher outlier_cloud_pub;
+
+//----------------------------------------------------------------------------
 
 pcl::ModelCoefficients rough_plane_coefficients;
 pcl::ModelCoefficients rough_line_coefficients;
 
 pcl::ModelCoefficients::Ptr plane_coefficients_ptr;
 pcl::ModelCoefficients line_coefficients;
+
+pcl::ModelCoefficients::Ptr circle_coefficients_ptr;
 
 pcl::ModelCoefficients::Ptr ground_plane_coefficients_ptr;
 
@@ -68,14 +114,12 @@ MenuHandler::EntryHandle h_display_entry;
 
 MenuHandler::EntryHandle h_mode_last;
 
-//changing modes
-int workmode = 0; //0- distance, 1 polyline mode 2 box selection 3- select 3 points to find a plane
+//----------------------------------------------------------------------------
 
 //global points
 Eigen::Vector4f minPoint;
 Eigen::Vector4f maxPoint;
  
-
 double rough_max_cylinder_radius = 0.1; // 05;
 double max_cylinder_radius = 0.05; // 0.03
 
@@ -131,15 +175,162 @@ pcl::PointCloud< pcl::PointXYZRGB> rviz_pt;
 pcl::PointCloud< pcl::PointXYZRGB> rviz_pt_filtered;
 
 //----------------------------------------------------------------------------
+//----------------------------------------------------------------------------
+
+// WARNING: hard-coded path to file
+
+void load_armory_golfcart_hokuyo_pcd()
+{
+  ground_plane_coefficients_ptr->values[0] = -0.00572;
+  ground_plane_coefficients_ptr->values[1] =  0.03041;
+  ground_plane_coefficients_ptr->values[2] =  0.99952;
+  ground_plane_coefficients_ptr->values[3] =  0.23462;
+  
+  load_xyzi_point_cloud("/home/cer/Downloads/golfcart_pillar1_hokuyo.pcd", *raw_xyzi_input_cloudptr, 1.0);
+  transform_to_level(*raw_xyzi_input_cloudptr, *xyzi_input_cloudptr, *ground_plane_coefficients_ptr);
+  
+  //  copy_xyzi_to_point_cloud(*xyzi_input_cloudptr, *raw_input_cloudptr);
+  copy_xyzi_to_point_cloud(*xyzi_input_cloudptr, *input_cloudptr);
+  
+  pcl::toROSMsg(*xyzi_input_cloudptr, input_cloud_msg);
+  input_cloud_msg.header.frame_id = "base_link";
+}
+
+//----------------------------------------------------------------------------
+
+// WARNING: hard-coded path to file
+
+void load_tepra_DS_asus_pcd()
+{
+  ground_plane_coefficients_ptr->values[0] = -0.03658;
+  ground_plane_coefficients_ptr->values[1] =  0.71868;
+  ground_plane_coefficients_ptr->values[2] = -0.69438; 
+  ground_plane_coefficients_ptr->values[3] =  1.48465;
+
+  load_point_cloud("/home/cer/Documents/papers/tepra2013/capture/driver_steering/driver_steering_ASUS.pcd", *raw_input_cloudptr, 1.0);
+  transform_to_level(*raw_input_cloudptr, *input_cloudptr, *ground_plane_coefficients_ptr);
+  
+  pcl::toROSMsg(*input_cloudptr, input_cloud_msg);
+  input_cloud_msg.header.frame_id = "base_link";
+}
+
+//----------------------------------------------------------------------------
+
+// WARNING: hard-coded path to file
+
+void load_tepra_PS_asus_pcd()
+{
+  ground_plane_coefficients_ptr->values[0] = -0.03001;
+  ground_plane_coefficients_ptr->values[1] =  0.84770;
+  ground_plane_coefficients_ptr->values[2] = -0.52963;
+  ground_plane_coefficients_ptr->values[3] =  1.56254; 
+
+  load_point_cloud("/home/cer/Documents/papers/tepra2013/capture/passenger_steering/passenger_steering_ASUS.pcd", *raw_input_cloudptr, 1.0);
+  transform_to_level(*raw_input_cloudptr, *input_cloudptr, *ground_plane_coefficients_ptr);
+  
+  pcl::toROSMsg(*input_cloudptr, input_cloud_msg);
+  input_cloud_msg.header.frame_id = "base_link";
+}
+
+//----------------------------------------------------------------------------
+
+void load_scene_pcd()
+{
+  if (do_load_armory_golf)
+    load_armory_golfcart_hokuyo_pcd();
+  else if (do_load_tepra_PS)
+    load_tepra_PS_asus_pcd();
+  else if (do_load_tepra_DS)
+    load_tepra_DS_asus_pcd();
+
+  have_scene_cloud = true;
+}
+
+//----------------------------------------------------------------------------
+
+void advertise_scene_pointcloud()
+{
+  // special because XYZI
+
+  if (do_load_armory_golf)
+    input_cloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZI> > ("scene_cloud", 1);
+
+  // default XYZ
+
+  else 
+    input_cloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("scene_cloud", 1);
+
+}
+
+//----------------------------------------------------------------------------
+//----------------------------------------------------------------------------
+
+// WARNING: hard-coded path to file
+
+void load_vehicle_pcd()
+{
+  vector <double> rough_path1_kinfu_vehicle_state;
+
+  rough_path1_kinfu_vehicle_state.resize(VEHICLE_STATE_DIMENSIONS);
+
+  // pre-calculated vehicle state from find_vehicle() on full kinfu map
+
+  rough_path1_kinfu_vehicle_state[VEHICLE_LENGTH] = 2.323;
+  rough_path1_kinfu_vehicle_state[VEHICLE_WIDTH] = 1.343;
+  rough_path1_kinfu_vehicle_state[VEHICLE_X] = 1.660;
+  rough_path1_kinfu_vehicle_state[VEHICLE_Y] = 1.863;
+  rough_path1_kinfu_vehicle_state[VEHICLE_THETA] = DEG2RAD(90-87.478);
+ 
+  if (do_load_kinfu_vehicle) {
+    load_point_cloud("/home/cer/Documents/papers/tepra2013/capture/kinfu/path1_vehicle_only_KINFU.pcd", *raw_object_cloudptr, 1.0);
+
+    // this takes the vehicle point cloud to the origin -- i.e., center of vehicle is at (0, 0), etc.
+
+    rectify_vehicle_point_cloud(*raw_object_cloudptr, *object_cloudptr, rough_path1_kinfu_vehicle_state);
+    pcl::toROSMsg(*object_cloudptr, object_cloud_msg);
+    object_cloud_msg.header.frame_id = "base_link";
+  }
+}
+
+//----------------------------------------------------------------------------
+
+// the OBJECT is the complicated thing of interest in the scene.
+// it could be the vehicle, it could be a ladder, it could be a drill.
+// for now there is only one.
+
+void load_object_pcd()
+{
+  load_vehicle_pcd();
+
+  have_object_cloud = true;
+}
+
+//----------------------------------------------------------------------------
+
+void advertise_object_pointcloud()
+{
+  object_cloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("object_cloud", 1);
+}
+
+//----------------------------------------------------------------------------
+//----------------------------------------------------------------------------
 
 void initialize_pcl()
 {
-  inlier_cloud_msg.header.frame_id = "base_link";
-  outlier_cloud_msg.header.frame_id = "base_link";
-
+  ud_cursor_pts.clear();
+  
   cursor_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
+  raw_xyzi_input_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZI>);
+  xyzi_input_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZI>);
+
+  raw_input_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
   input_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+
+  temp_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+
+  raw_object_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
+  object_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
   input_cropped_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
@@ -155,15 +346,26 @@ void initialize_pcl()
   hull_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
   plane_coefficients_ptr.reset(new pcl::ModelCoefficients);
+  circle_coefficients_ptr.reset(new pcl::ModelCoefficients);
+
   ground_plane_coefficients_ptr.reset(new pcl::ModelCoefficients);
-  ground_plane_coefficients_ptr->values[0] = ground_plane_coefficients_ptr->values[1] = 0.0;
-  ground_plane_coefficients_ptr->values[2] = 1.0;
-  ground_plane_coefficients_ptr->values[3] = 0.0;
+  ground_plane_coefficients_ptr->values.resize(4);
+
+  load_scene_pcd();
+
+  load_object_pcd();
+
+  // distance slice raw_input_cloudptr and remove ground plane -> input_cloudptr
+
+  //  Eigen::Matrix4f tform;
+  //  icp_align_point_clouds(cloud1_ptr, object_cloudptr, cloud1_registered,  tform);
 }
 
 //----------------------------------------------------------------------------
 
-void send_cylinder_marker(pcl::ModelCoefficients & coefficients,
+// for roof pillar
+
+void send_line_cylinder_marker(pcl::ModelCoefficients & line_coeffs,
 			  double radius,
 			  double min_xp, double max_xp,
 			  float r, float g, float b, float a)
@@ -177,20 +379,20 @@ void send_cylinder_marker(pcl::ModelCoefficients & coefficients,
   cyl.action=visualization_msgs::Marker::ADD;
 
   printf("%.3lf %.3lf %.3lf = %.3lf [%.3lf min, %.3lf max]\n", 
-	 coefficients.values[3],
-	 coefficients.values[4],
-	 coefficients.values[5],
-	 coefficients.values[3]*coefficients.values[3]+coefficients.values[4]*coefficients.values[4]+coefficients.values[5]*coefficients.values[5],
+	 line_coeffs.values[3],
+	 line_coeffs.values[4],
+	 line_coeffs.values[5],
+	 line_coeffs.values[3]*line_coeffs.values[3]+line_coeffs.values[4]*line_coeffs.values[4]+line_coeffs.values[5]*line_coeffs.values[5],
 	 min_xp,
 	 max_xp);
 
-  cyl.pose.position.x = coefficients.values[0] + 0.5 * (max_xp + min_xp) * coefficients.values[3];
-  cyl.pose.position.y = coefficients.values[1] + 0.5 * (max_xp + min_xp) * coefficients.values[4];
-  cyl.pose.position.z = coefficients.values[2] + 0.5 * (max_xp + min_xp) * coefficients.values[5];
+  cyl.pose.position.x = line_coeffs.values[0] + 0.5 * (max_xp + min_xp) * line_coeffs.values[3];
+  cyl.pose.position.y = line_coeffs.values[1] + 0.5 * (max_xp + min_xp) * line_coeffs.values[4];
+  cyl.pose.position.z = line_coeffs.values[2] + 0.5 * (max_xp + min_xp) * line_coeffs.values[5];
 
-  //  tf::Quaternion q = shortest_rotation_quaternion(-coefficients.values[3], -coefficients.values[4], -coefficients.values[5], 0, 0, 1);
+  //  tf::Quaternion q = shortest_rotation_quaternion(-line_coeffs.values[3], -line_coeffs.values[4], -line_coeffs.values[5], 0, 0, 1);
   tf::Quaternion q = shortest_rotation_quaternion(0, 0, 1,
-						  coefficients.values[3], coefficients.values[4], coefficients.values[5]);
+						  line_coeffs.values[3], line_coeffs.values[4], line_coeffs.values[5]);
  
   cyl.pose.orientation.x =q.x();
   cyl.pose.orientation.y =q.y();
@@ -210,6 +412,69 @@ void send_cylinder_marker(pcl::ModelCoefficients & coefficients,
   cyl.scale.x = 2.0*radius;
   cyl.scale.y = 2.0*radius;
   cyl.scale.z = max_xp - min_xp;
+  
+  //Color
+
+  cyl.color.r = r;
+  cyl.color.g = g;
+  cyl.color.b = b;
+  cyl.color.a = a;
+
+
+  cylinder_marker_pub.publish(cyl);
+}
+
+//----------------------------------------------------------------------------
+
+// for steering wheel
+
+void send_circle_cylinder_marker(double x, double y, double z,
+				 pcl::ModelCoefficients & plane_coeffs,
+				 double radius, double height,
+				 float r, float g, float b, float a)
+{
+  // Initialize marker parameters
+
+  visualization_msgs::Marker cyl;
+  cyl.header.frame_id="/base_link";
+  cyl.header.stamp =ros::Time::now();
+  cyl.ns="UD_rviz_interaction";
+  cyl.action=visualization_msgs::Marker::ADD;
+
+  /*
+  printf("%.3lf %.3lf %.3lf = %.3lf [%.3lf min, %.3lf max]\n", 
+	 line_coeffs.values[3],
+	 line_coeffs.values[4],
+	 line_coeffs.values[5],
+	 line_coeffs.values[3]*line_coeffs.values[3]+line_coeffs.values[4]*line_coeffs.values[4]+line_coeffs.values[5]*line_coeffs.values[5],
+	 min_xp,
+	 max_xp);
+  */
+
+  cyl.pose.position.x = x;
+  cyl.pose.position.y = y;
+  cyl.pose.position.z = z;
+
+  tf::Quaternion q = shortest_rotation_quaternion(0, 0, 1,
+						  plane_coeffs.values[0], plane_coeffs.values[1], plane_coeffs.values[2]);
+ 
+  cyl.pose.orientation.x =q.x();
+  cyl.pose.orientation.y =q.y();
+  cyl.pose.orientation.z =q.z();
+  cyl.pose.orientation.w =q.w();
+
+  //ID
+
+  cyl.id =33;
+  
+  //Type
+  cyl.type = visualization_msgs::Marker::CYLINDER;
+  
+  //Scale
+
+  cyl.scale.x = 2.0*radius;
+  cyl.scale.y = 2.0*radius;
+  cyl.scale.z = height;
   
   //Color
 
@@ -271,14 +536,14 @@ void send_ud_cursor_point_markers()
 
     if (i == ud_cursor_pt_selection_index) {
       color.r = 1.0;
-      color.g = 0.5;
-      color.b = 0.0;
+      color.g = 0.0;
+      color.b = 0.5;
       color.a = 0.6;
     }
     else {
       color.r = 0.0;
-      color.g = 1.0;
-      color.b = 0.0;
+      color.g = 0.0;
+      color.b = 1.0;
       color.a = 0.6;
     }
 
@@ -680,7 +945,7 @@ void EstimateLine()
 
   double mean_radius = mean_pointcloud_distance_to_3D_line(inlier_cloudptr, line_coefficients);
 
-  printf("mean dist = %lf\n", mean_radius);
+  printf("estimated radius = %lf\n", mean_radius);
 
   /*
   robust_cylinder_fit(*inlier_cloudptr,
@@ -691,7 +956,7 @@ void EstimateLine()
   */
 
 
-  send_cylinder_marker(line_coefficients,
+  send_line_cylinder_marker(line_coefficients,
 		       mean_radius, // max_cylinder_radius,
 		       min_xp, max_xp,
 		       1.0, 0.0, 0.0, 0.5);
@@ -813,11 +1078,16 @@ void EstimateLineCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr
 
 // parametrize (if n = 3) or fit (n >= 4) PLANE to all ud_cursor points
 
-void EstimatePlane(bool do_publish)
+void EstimatePlane(double prism_distance_threshold, bool do_publish)
 {
+  int i;
+
+  bool fit_twice = true; // false;
+  double hull_scale_factor = 2.0;
+
   cursor_cloudptr->points.clear();
 
-  for (int i = 0; i < ud_cursor_pts.size(); i++)
+  for (i = 0; i < ud_cursor_pts.size(); i++)
     cursor_cloudptr->points.push_back(ud_cursor_pts[i]);
   
   // this is just on the cursor points
@@ -839,10 +1109,30 @@ void EstimatePlane(bool do_publish)
     return;
   }
 
+  pcl::PointXYZ P_mean;
+  P_mean.x = P_mean.y = P_mean.z = 0.0;
+
+  for (i = 0; i < hull_cloudptr->points.size(); i++) {
+    P_mean.x += hull_cloudptr->points[i].x;
+    P_mean.y += hull_cloudptr->points[i].y;
+    P_mean.z += hull_cloudptr->points[i].z;
+  }
+
+  P_mean.x /= (double) hull_cloudptr->points.size();
+  P_mean.y /= (double) hull_cloudptr->points.size();
+  P_mean.z /= (double) hull_cloudptr->points.size();
+
+  for (i = 0; i < hull_cloudptr->points.size(); i++) {
+    hull_cloudptr->points[i].x = P_mean.x + hull_scale_factor * (hull_cloudptr->points[i].x - P_mean.x);
+    hull_cloudptr->points[i].y = P_mean.y + hull_scale_factor * (hull_cloudptr->points[i].y - P_mean.y);
+    hull_cloudptr->points[i].z = P_mean.z + hull_scale_factor * (hull_cloudptr->points[i].z - P_mean.z);
+  }
+
   pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
   prism.setInputCloud (input_cloudptr);
   prism.setInputPlanarHull (hull_cloudptr);
-  prism.setHeightLimits (-rough_max_plane_distance, rough_max_plane_distance);
+  prism.setHeightLimits (-prism_distance_threshold, prism_distance_threshold);
+  //  prism.setHeightLimits (-rough_max_plane_distance, rough_max_plane_distance);
   pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
 
   // do the clip on entire point cloud
@@ -866,11 +1156,12 @@ void EstimatePlane(bool do_publish)
 
   // proximity to original plane was loose, and there weren't that many cursor points, so fit again 
 
-  robust_plane_fit(*rough_inlier_cloudptr,
-		   *inlier_cloudptr,
-		   *outlier_cloudptr,
-		   *plane_coefficients_ptr,
-		   max_plane_distance);
+  if (fit_twice)
+    robust_plane_fit(*rough_inlier_cloudptr,
+		     *inlier_cloudptr,
+		     *outlier_cloudptr,
+		     *plane_coefficients_ptr,
+		     max_plane_distance);
   
   //  printf("fine plane: %i in, %i out\n", inlier_cloudptr->points.size(), outlier_cloudptr->points.size()); fflush(stdout);
 
@@ -895,11 +1186,12 @@ void EstimatePlane(bool do_publish)
 
     //    printf("a\n"); fflush(stdout);
 
-    plane_slice(*input_cloudptr,
-		*rough_inlier_cloudptr,
-		*rough_outlier_cloudptr,
-		*plane_coefficients_ptr,
-		max_plane_distance);
+    if (fit_twice)
+      plane_slice(*input_cloudptr,
+		  *rough_inlier_cloudptr,
+		  *rough_outlier_cloudptr,
+		  *plane_coefficients_ptr,
+		  max_plane_distance);
 
     if (do_publish) {
 
@@ -907,6 +1199,7 @@ void EstimatePlane(bool do_publish)
       //    printf("b w %i h %i size %i\n", rough_inlier_cloudptr->width,rough_inlier_cloudptr->height,rough_inlier_cloudptr->points.size() ); fflush(stdout);
       
       pcl::toROSMsg(*rough_inlier_cloudptr, inlier_cloud_msg);
+      inlier_cloud_msg.header.frame_id = "base_link";
       inlier_cloud_pub.publish(inlier_cloud_msg);
       
       /*
@@ -920,6 +1213,7 @@ void EstimatePlane(bool do_publish)
       rough_outlier_cloudptr->width = rough_outlier_cloudptr->height = 0;
       
       pcl::toROSMsg(*rough_outlier_cloudptr, outlier_cloud_msg);
+      outlier_cloud_msg.header.frame_id = "base_link";
       outlier_cloud_pub.publish(outlier_cloud_msg);
 
     /*
@@ -937,7 +1231,7 @@ void EstimatePlane(bool do_publish)
 
 void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-  EstimatePlane(true);
+  EstimatePlane(rough_max_plane_distance, true);
 }
 
 //----------------------------------------------------------------------------
@@ -946,7 +1240,7 @@ void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
 
 void EstimateCircle()
 {
-  EstimatePlane(false);
+  EstimatePlane(0.025, false);
 
   // Create the filtering object
 
@@ -956,19 +1250,98 @@ void EstimateCircle()
   proj.setModelCoefficients (plane_coefficients_ptr);
   proj.filter (*projected_inlier_cloudptr);
 
+  // bring points to Z = 0 plane to do 2-D fit
+
   transform_to_level(*projected_inlier_cloudptr, *level_inlier_cloudptr, *plane_coefficients_ptr);
+
+  robust_circle2d_fit(*level_inlier_cloudptr,
+		      *rough_inlier_cloudptr,
+		      *inlier_cloudptr,
+		      *outlier_cloudptr,
+		      *circle_coefficients_ptr,
+		      0.02,
+		      0.1, 0.2,
+		      true);
+  
+  /*
+  robust_circle2d_fit(*level_inlier_cloudptr,
+		      *rough_inlier_cloudptr,
+		      *rough_outlier_cloudptr,
+		      *circle_coefficients_ptr,
+		      0.02,
+		      0.1, 0.2);
+
+  // now bring them back up to 3-D again before publishing them
+
+  reverse_transform_to_level(*rough_inlier_cloudptr, *inlier_cloudptr, *plane_coefficients_ptr);
+  reverse_transform_to_level(*rough_outlier_cloudptr, *outlier_cloudptr, *plane_coefficients_ptr);
+  */
 
   //  rough_inlier_cloudptr->width = rough_inlier_cloudptr->height = 0;
   //  pcl::toROSMsg(*rough_inlier_cloudptr, inlier_cloud_msg);
-  pcl::toROSMsg(*level_inlier_cloudptr, inlier_cloud_msg);
+
+  pcl::toROSMsg(*inlier_cloudptr, inlier_cloud_msg);
+  inlier_cloud_msg.header.frame_id = "base_link";
   inlier_cloud_pub.publish(inlier_cloud_msg);
-      
+
+  pcl::toROSMsg(*outlier_cloudptr, outlier_cloud_msg);
+  outlier_cloud_msg.header.frame_id = "base_link";
+  outlier_cloud_pub.publish(outlier_cloud_msg);
+     
+  level_inlier_cloudptr->points.resize(1);
+  level_inlier_cloudptr->points[0].x = circle_coefficients_ptr->values[0];
+  level_inlier_cloudptr->points[0].y = circle_coefficients_ptr->values[1];
+  level_inlier_cloudptr->points[0].z = 0.0;
+  reverse_transform_to_level(*level_inlier_cloudptr, *temp_cloudptr, *plane_coefficients_ptr);
+
+  send_circle_cylinder_marker(temp_cloudptr->points[0].x, temp_cloudptr->points[0].y, temp_cloudptr->points[0].z,
+			      *plane_coefficients_ptr,
+			      circle_coefficients_ptr->values[2] + 0.02, 0.05,
+			      0.0, 1.0, 0.0, 0.5);
 
 }
 
 void EstimateCircleCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
   EstimateCircle();
+}
+
+//----------------------------------------------------------------------------
+
+void EstimateRigidTransform()
+{
+  pcl::PointCloud<pcl::PointXYZ> cloud1;
+  pcl::PointCloud<pcl::PointXYZ> cloud2;
+  Eigen::Matrix4f RT;
+
+  for (int i = 0; i < ud_cursor_pts.size(); i++) {
+    if (!(i % 2))
+      cloud1.points.push_back(ud_cursor_pts[i]);
+    else
+      cloud2.points.push_back(ud_cursor_pts[i]);
+  }
+
+  estimate_rigid_transform(cloud1, cloud2, RT);
+}
+
+//----------------------------------------------------------------------------
+
+void initialize_crop()
+{
+  fp.x=1;
+  fp.y=1;
+  fp.z=1;
+  cp.x=pp.x=0;
+  cp.y=pp.y=0;
+  cp.z=pp.z=0;
+
+  minPoint[0]=-999; 
+  minPoint[1]=-999; 
+  minPoint[2]=-999; 
+
+  maxPoint[0]=999; 
+  maxPoint[1]=999; 
+  maxPoint[2]=999;  
 }
 
 //----------------------------------------------------------------------------
@@ -1183,6 +1556,18 @@ void initMenu()
 }
 
 //----------------------------------------------------------------------------
+
+void initialize_menu()
+{
+  server.reset( new InteractiveMarkerServer("menu","",false) );
+  initMenu();
+
+  makeMenuMarker( "marker1" );
+  menu_handler.apply( *server, "marker1" );
+  server->applyChanges();
+}
+
+//----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
 
 /*
@@ -1207,6 +1592,8 @@ void ptcloudCallback(const sensor_msgs::PointCloud2ConstPtr& input)
   */
 
   pcl::fromROSMsg (*input, *input_cloudptr);
+
+  have_scene_cloud = true;
 
   //do data processing
 
@@ -1652,221 +2039,6 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
 
   send_ud_cursor_point_markers();
 
-  /*
-
-  if(workmode == 3)  //plane finding
-  {
-  
-  //Getting ROS geometry msgs
-  //ROS_INFO("New Point at X: %f, Y: %f, Z: %f\n", msg.point.x, msg.point.y, msg.point.z);
-  fp.x = msg.point.x;
-  fp.y = msg.point.y;
-  fp.z = msg.point.z;
-  
-  //Need to extend to allow 3 clicks which determine a plane
-  
-  //marker
-  
-  visualization_msgs::Marker plane1;
-  plane1.header.frame_id = "base_link";
-  plane1.header.stamp = ros::Time();
-  plane1.ns = "UD_rviz_interaction";
-  plane1.id = 0;
-  plane1.type = visualization_msgs::Marker::CUBE;
-  plane1.action = visualization_msgs::Marker::ADD;
-  plane1.pose.position.x = fp.x;
-  plane1.pose.position.y = fp.y; 
-  plane1.pose.position.z = fp.z;
-  //need to determine plane orientation
-  plane1.pose.orientation.x = 0.0;
-  plane1.pose.orientation.y = 0.0;
-  plane1.pose.orientation.z = 0.0;
-  plane1.pose.orientation.w = 1.0;
-  plane1.scale.x = 1;
-  plane1.scale.y = 1;
-  plane1.scale.z = 0.1;
-  plane1.color.a = 1.0;
-  plane1.color.r = 0.0;
-  plane1.color.g = 1.0;
-  plane1.color.b = 0.0;
-  //only if using a MESH_RESOURCE marker type:
-  //UD_rviz_interaction.mesh_resource = "package://pr2_description/meshes/base_v0/base.dae";
-  marker_pub.publish( plane1 );
-	  
-  }
-  else if(workmode == 0)  //distance finding
-  {
-  
-  //Getting ROS geometry msgs
-  //ROS_INFO("New Point at X: %f, Y: %f, Z: %f\n", msg.point.x, msg.point.y, msg.point.z);
-  fp.x = msg.point.x;
-  fp.y = msg.point.y;
-  fp.z = msg.point.z;
-  
-  
-  // Initialize marker parameters
-  visualization_msgs::Marker points, line_strip, line_list , psphere, csphere, arrow, showtext,showtextid;
-  showtext.header.frame_id = arrow.header.frame_id=psphere.header.frame_id=csphere.header.frame_id = points.header.frame_id = line_strip.header.frame_id = line_list.header.frame_id = showtextid.header.frame_id = "/base_link";
-  showtext.header.stamp = arrow.header.stamp=psphere.header.stamp =csphere.header.stamp= points.header.stamp = line_strip.header.stamp = line_list.header.stamp = ros::Time::now();
-  showtext.ns = arrow.ns=psphere.ns=csphere.ns=points.ns = line_strip.ns = line_list.ns = "UD_rviz_interaction";
-  showtext.action = arrow.action=psphere.action=csphere.action=points.action = line_strip.action = line_list.action = visualization_msgs::Marker::ADD;
-  showtext.pose.orientation.w = arrow.pose.orientation.w=psphere.pose.orientation.w =csphere.pose.orientation.w= points.pose.orientation.w = line_strip.pose.orientation.w = line_list.pose.orientation.w = 1.0;
-  
-  //ID
-  points.id = 0;
-  line_strip.id = 1;
-  line_list.id = 2;
-  psphere.id =3;
-  csphere.id =4;
-  arrow.id=5;
-  showtext.id=6;
-  showtextid.id=7;
-  
-  //Type
-  points.type = visualization_msgs::Marker::POINTS;
-  line_strip.type = visualization_msgs::Marker::LINE_STRIP;
-  line_list.type = visualization_msgs::Marker::LINE_LIST;
-  psphere.type = visualization_msgs::Marker::SPHERE;
-  csphere.type = visualization_msgs::Marker::SPHERE;
-  arrow.type = visualization_msgs::Marker::ARROW;
-  showtext.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
-  showtextid.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
-  
-  //Scale
-  psphere.scale.x = 0.05*globalscale;
-  psphere.scale.y = 0.05*globalscale;
-  psphere.scale.z = 0.05*globalscale;
-  
-  csphere.scale.x = 0.05*globalscale;
-  csphere.scale.y = 0.05*globalscale;
-  csphere.scale.z = 0.05*globalscale;
-  
-  showtext.scale.x = 0.05*globalscale;
-  showtext.scale.y = 0.05*globalscale;
-  showtext.scale.z = 0.05*globalscale;
-  
-  showtextid.scale.x = 0.05*globalscale;
-  showtextid.scale.y = 0.05*globalscale;
-  showtextid.scale.z = 0.05*globalscale;
-  
-  line_list.scale.x = 0.005*globalscale;
-  line_list.scale.y = 0.005*globalscale;
-  line_list.scale.z = 0.005*globalscale;
-  
-  line_strip.scale.x = 0.005*globalscale;
-  
-  //Color
-  points.color.b = 1.0;
-  points.color.a = 1.0;
-  
-  // Line strip is blue
-  line_list.color.b = 1.0;
-  line_list.color.a = 1.0;
-  
-  line_strip.color.b = 1.0;
-  line_strip.color.a = 1.0;
-  
-  // Sphere is green
-  psphere.color.r = 1.0;
-  psphere.color.a = 0.6;
-  
-  csphere.color.g = 1.0;
-  csphere.color.a = 1.0;
-  
-  //Text is green
-  showtext.color.r = 1.0;
-  showtext.color.g = 1.0;
-  showtext.color.a = 1.0;
-  
-  showtextid.color.r = 0.0;
-  showtextid.color.g = 1.0;
-  showtextid.color.a = 1.0;
-  
-  cp.x=fp.x;
-  cp.y=fp.y;
-  cp.z=fp.z;
-  
-  psphere.points.push_back(pp);
-  psphere.pose.position.x = pp.x;
-  psphere.pose.position.y = pp.y;
-  psphere.pose.position.z = pp.z;
-  
-  csphere.points.push_back(cp);
-  csphere.pose.position.x = cp.x;
-  csphere.pose.position.y = cp.y;
-  csphere.pose.position.z = cp.z;
-  
-  
-  // Create the vertices for the points and lines
-  
-  polypoints[0][polycount]=fp.x;
-  polypoints[1][polycount]=fp.y;
-  polypoints[2][polycount]=fp.z;
-  
-  
-  for (int i = 0; i<=polycount;i++) {
-    
-    geometry_msgs::Point p;
-    p.x = polypoints[0][i];
-    p.y = polypoints[1][i];
-    p.z = polypoints[2][i];
-
-    points.points.push_back(p);
-    line_strip.points.push_back(p);
-    
-    
-    std::stringstream point_id;
-    point_id<< i << "\n";
-    
-    printf("%d\n", i);
-    
-    showtextid.text = point_id.str();
-    showtextid.pose.position.x = polypoints[0][i];
-    showtextid.pose.position.y = polypoints[1][i];
-    showtextid.pose.position.z = polypoints[2][i];
-    
-    // line_list.points.push_back(p);
-    // p.z += 1.0;
-    //line_list.points.push_back(p);
-
-    //    if(i>0)
-    //      cpdist=cpdist+calc_cp_dist(i,polypoints);
-    
-  }
-  
-  pp.x = cp.x;
-  pp.y = cp.y;
-  pp.z = cp.z;
-  
-  printf("Distance: %f \n", cpdist);
-  
-  std::stringstream show_dist;
-  show_dist<< cpdist << "\n";
-  
-  showtext.text = show_dist.str();
-  showtext.pose.position.x = polypoints[0][polycount];
-  showtext.pose.position.y = polypoints[1][polycount];
-  showtext.pose.position.z = polypoints[2][polycount];
-  
-  // Publish markers
-  marker_pub.publish(line_list);
-  marker_pub.publish(psphere);
-  marker_pub.publish(csphere);
-  marker_pub.publish(showtext);
-  marker_pub.publish(showtextid);
-  marker_pub.publish(line_strip);
-  
-  
-  //  if (polycount!=num_polypoints)
-  //    polycount++;
-  //  else {
-  //    polycount=0;
-  //    cpdist=0;
-  //  }
-    
-  } //end of workmode 0 code (distance finding)
-    */
-
 }
 
 //----------------------------------------------------------------------------
@@ -1891,7 +2063,7 @@ void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
     return;
   }
   else if (msg.EstimatePlane == 1) {
-    EstimatePlane(true);
+    EstimatePlane(rough_max_plane_distance, true);
     return;
   }
   else if (msg.EstimateLine == 1) {
@@ -1900,6 +2072,10 @@ void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
   }
   else if (msg.EstimateCircle == 1) {
     EstimateCircle();
+    return;
+  }
+  else if (msg.EstimateRigidTransform == 1) {
+    EstimateRigidTransform();
     return;
   }
   else if (msg.MeasureLength == 1) {
@@ -1921,40 +2097,8 @@ void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
 
 //----------------------------------------------------------------------------
 
-int main( int argc, char** argv )
+void initialize_ros()
 {
-  initialize_pcl();
-
-  ud_cursor_pts.clear();
-
-  fp.x=1;
-  fp.y=1;
-  fp.z=1;
-  cp.x=pp.x=0;
-  cp.y=pp.y=0;
-  cp.z=pp.z=0;
-
-  minPoint[0]=-999; 
-  minPoint[1]=-999; 
-  minPoint[2]=-999; 
-
-  maxPoint[0]=999; 
-  maxPoint[1]=999; 
-  maxPoint[2]=999;  
-
-  printf("ud_imarker server starting\n"); fflush(stdout);
-
-  ros::init(argc, argv, "UD_rviz_interaction");
-
-  server.reset( new InteractiveMarkerServer("menu","",false) );
-  initMenu();
-
-  makeMenuMarker( "marker1" );
-  menu_handler.apply( *server, "marker1" );
-  server->applyChanges();
-
-   nhp= new ros::NodeHandle();
-
   // Publishers
 
   marker_pub = nhp->advertise<visualization_msgs::Marker>("visualization_marker", 10);
@@ -1964,6 +2108,9 @@ int main( int argc, char** argv )
   cylinder_marker_pub = nhp->advertise<visualization_msgs::Marker>("cylinder_marker", 10);
 
   ptcloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("ud_output", 1);
+
+  advertise_scene_pointcloud();
+  advertise_object_pointcloud();
 
   inlier_cloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("ud_inliers", 1);
   outlier_cloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("ud_outliers", 1);
@@ -1976,13 +2123,69 @@ int main( int argc, char** argv )
   
   //add a subscriber to listen for things that are clicked on in the measurement panel
   measurement_sub = nhp->subscribe("measurement_command", 10, panelCallback);
-  
 
+}
+
+//----------------------------------------------------------------------------
+
+int main( int argc, char** argv )
+{
+  printf("ud_imarker server starting\n"); fflush(stdout);
+
+  // options to locally load .pcd files instead of subscribing to what pcd_to_pointcloud puts out.
+  // this should be done with ros params, etc., but i'm too lazy to deal with that right now -- for now
+  // it works to just write "rosrun ud_imarker UD_rviz_interaction -armory_golf -kinfu_vehicle"
+
+  for (int i = 0; i < argc; i++) {
+    
+    // only one of these should be chosen
+
+    if (!strcmp(argv[i], "-armory_golf"))
+      do_load_armory_golf = true;
+    else if (!strcmp(argv[i], "-tepra_ds"))
+      do_load_tepra_DS = true;
+    else if (!strcmp(argv[i], "-tepra_ps"))
+      do_load_tepra_PS = true;
+
+    // this can be chosen independently 
+
+    else if (!strcmp(argv[i], "-kinfu_vehicle"))
+      do_load_kinfu_vehicle = true;
+  }
+
+  ros::init(argc, argv, "UD_rviz_interaction");
+  nhp = new ros::NodeHandle();
+
+  initialize_pcl();
+  initialize_crop();
+  initialize_menu();
+
+  initialize_ros();
+  
   ros::Rate UD_rviz_interaction_rate(30);
+
+  double publish_interval = 1.0;
+  double last_timestamp = ros::Time::now().toSec();
 
   while (ros::ok())
   {
     UD_rviz_interaction_rate.sleep();
+
+    double now_timestamp = ros::Time::now().toSec();
+
+    if ((now_timestamp - last_timestamp) >= publish_interval) {
+
+      //      printf("publishing!\n"); fflush(stdout);
+      last_timestamp = now_timestamp;
+
+      if (have_scene_cloud)
+	input_cloud_pub.publish(input_cloud_msg);
+
+      if (have_object_cloud)
+	object_cloud_pub.publish(object_cloud_msg);
+
+    }
+
     ros::spinOnce();
   }
 }

@@ -6,6 +6,197 @@
 
 //----------------------------------------------------------------------------
 
+// least squares--wants cloud1 and cloud2 to be same size with cloud1[i] corresponding to the point at cloud2[i]
+
+bool estimate_rigid_transform(pcl::PointCloud<pcl::PointXYZ> & cloud1, pcl::PointCloud<pcl::PointXYZ> & cloud2, 
+			      Eigen::Matrix4f & RT)
+{
+  printf("in estimate_rigid_transform()\n"); fflush(stdout);
+
+  if (cloud1.points.size() != cloud2.points.size() || cloud1.points.size() < 3)
+    return false;
+
+  pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> trans_est;
+
+  trans_est.estimateRigidTransformation(cloud1, cloud2, RT);
+
+  cout << RT << endl;
+
+  return true;
+}
+
+//----------------------------------------------------------------------------
+
+double icp_align_point_clouds(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud2,
+			      pcl::PointCloud<pcl::PointXYZ> & cloud1_registered,  Eigen::Matrix4f & tform,
+			      int max_iterations)
+{
+  //  printf("ICP: %i %i\n", cloud1->size(), cloud2->size());
+
+  // printf("ICP...\n");
+  pcl::Registration<pcl::PointXYZ, pcl::PointXYZ>::Ptr registration; // (new pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>);
+  registration.reset(new pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>);
+  registration->setInputCloud(cloud1);
+  //registration->setInputCloud(source_segmented_);
+  registration->setInputTarget (cloud2);
+
+  // correspondences with higher distances will be ignored
+  registration->setMaxCorrespondenceDistance(0.05);
+
+  registration->setRANSACOutlierRejectionThreshold (0.05);
+
+  //  registration->setTransformationEpsilon (0.000001);
+  registration->setTransformationEpsilon (0.000001);
+
+  //  registration->setMaximumIterations (1000);
+  //  registration->setMaximumIterations (500);
+  //  registration->setMaximumIterations (200);
+  //  registration->setMaximumIterations (50);
+
+  registration->setMaximumIterations (max_iterations);
+
+  registration->align(cloud1_registered);
+
+  //  if (registration->hasConverged()) {
+
+    tform = registration->getFinalTransformation();
+
+    return registration->getFitnessScore();
+    //  }
+    // else
+    // return 0.0;
+
+  //  printf("%+6.5lf %+6.4lf %+6.4lf\n", tform(0, 3), tform(1, 3), tform(2, 3));
+
+  /*
+
+  printf("\t// translation\n\n");
+  printf("\ttform(0, 3) = %lf;\n", tform(0, 3));
+  printf("\ttform(1, 3) = %lf;\n", tform(1, 3));
+  printf("\ttform(2, 3) = %lf;\n", tform(2, 3));
+
+
+  printf("\n\t// rotation\n\n");
+  printf("\ttform(0, 0) = %lf;\n", tform(0, 0));
+  printf("\ttform(0, 1) = %lf;\n", tform(0, 1));
+  printf("\ttform(0, 2) = %lf;\n", tform(0, 2));
+  printf("\n");
+  printf("\ttform(1, 0) = %lf;\n", tform(1, 0));
+  printf("\ttform(1, 1) = %lf;\n", tform(1, 1));
+  printf("\ttform(1, 2) = %lf;\n", tform(1, 2));
+  printf("\n");
+  printf("\ttform(2, 0) = %lf;\n", tform(2, 0));
+  printf("\ttform(2, 1) = %lf;\n", tform(2, 1));
+  printf("\ttform(2, 2) = %lf;\n", tform(2, 2));
+
+  cout << tform << endl;
+  */
+}
+
+//----------------------------------------------------------------------------
+
+// use precomputed bounding box from vehicle_tracker to center and "derotate" vehicle point cloud
+
+// rotation is only around z axis
+
+void rectify_vehicle_point_cloud(pcl::PointCloud<pcl::PointXYZ> & cloud_in, pcl::PointCloud<pcl::PointXYZ> & cloud_out,
+				 vector <double> & vehicle_state)
+{
+  // center
+
+  //  tf::Quaternion q(1, 0, 0, 0);
+  //  tf::Transform xform(q, tf::Vector3(-rough_path1_kinfu_vehicle_state[VEHICLE_X], -rough_path1_kinfu_vehicle_state[VEHICLE_Y], 0));
+  //  pcl_ros::transformPointCloud(cloud_in, cloud_out, xform);
+
+  Eigen::Matrix4f T;
+  T.setIdentity();
+
+  T(0, 3) = -vehicle_state[VEHICLE_X];
+  T(1, 3) = -vehicle_state[VEHICLE_Y];
+
+  Eigen::Matrix4f R;
+  R.setIdentity();
+
+  double theta = 0.5 * M_PI + vehicle_state[VEHICLE_THETA];
+  R.topLeftCorner(3, 3) = Eigen::Matrix3f(Eigen::AngleAxisf(theta, Eigen::Vector3f (0, 0, 1)));
+
+  transformPointCloud(cloud_in, cloud_out, R * T);
+
+}
+
+//----------------------------------------------------------------------------
+
+// load points and scale to make units METERS
+
+void load_point_cloud(char *filename, pcl::PointCloud<pcl::PointXYZ> & cloud, double scale_factor)
+{
+  if (pcl::io::loadPCDFile<pcl::PointXYZ> (filename, cloud) == -1) {
+    printf("Couldn't read file %s\n", filename);
+    exit(1);
+  }
+  
+  printf("Loaded %i data points from %s at %.2f scale\n", cloud.width * cloud.height, filename, scale_factor);
+
+  if (scale_factor != 1.0) 
+    for (int i = 0; i < cloud.points.size(); i++) {
+      cloud.points[i].x *= scale_factor;
+      cloud.points[i].y *= scale_factor;
+      cloud.points[i].z *= scale_factor;
+    }
+
+//   for (size_t i = 0; i < raw_cloud->points.size (); ++i)
+//     std::cout << "    " << raw_cloud->points[i].x
+//               << " "    << raw_cloud->points[i].y
+//               << " "    << raw_cloud->points[i].z << std::endl;
+  
+}
+
+//----------------------------------------------------------------------------
+
+void load_xyzi_point_cloud(char *filename, pcl::PointCloud<pcl::PointXYZI> & cloud, double scale_factor)
+{
+  if (pcl::io::loadPCDFile<pcl::PointXYZI> (filename, cloud) == -1) {
+    printf("Couldn't read file %s\n", filename);
+    exit(1);
+  }
+  
+  printf("Loaded %i data points from %s at %.2f scale\n", cloud.width * cloud.height, filename, scale_factor);
+
+  if (scale_factor != 1.0) 
+    for (int i = 0; i < cloud.points.size(); i++) {
+      cloud.points[i].x *= scale_factor;
+      cloud.points[i].y *= scale_factor;
+      cloud.points[i].z *= scale_factor;
+    }
+
+//   for (size_t i = 0; i < raw_cloud->points.size (); ++i)
+//     std::cout << "    " << raw_cloud->points[i].x
+//               << " "    << raw_cloud->points[i].y
+//               << " "    << raw_cloud->points[i].z << std::endl;
+  
+}
+
+//----------------------------------------------------------------------------
+
+void copy_xyzi_to_point_cloud(pcl::PointCloud<pcl::PointXYZI> & cloud_in, 
+			      pcl::PointCloud<pcl::PointXYZ> & cloud_out)
+{
+  int i;
+  pcl::PointXYZ P;
+
+  cloud_out.clear();
+
+  for (i = 0; i < cloud_in.points.size(); i++) {
+    P.x = cloud_in[i].x;
+    P.y = cloud_in[i].y;
+    P.z = cloud_in[i].z;
+    cloud_out.push_back(P);
+  }
+
+}
+
+//----------------------------------------------------------------------------
+
 // how far is P from the line defined by Pu, Pv?  The distance between Pu and Pv
 // is precalculated in Pu_Pv_dist for convenience
 
@@ -103,6 +294,7 @@ void compute_line_limits(pcl::PointCloud<pcl::PointXYZ>::Ptr line_cloudptr,
 // everything within distance *threshold* of LINE is an inlier, everything outside that is an outlier
 
 // basically pcl::SampleConsensusModelLine<PointT>::selectWithinDistance () from sac_model_line.hpp
+
 void cylinder_slice(pcl::PointCloud<pcl::PointXYZ> & cloud,
 		    pcl::PointCloud<pcl::PointXYZ> & cloud_inliers,
 		    pcl::PointCloud<pcl::PointXYZ> & cloud_outliers,
@@ -235,7 +427,7 @@ bool robust_plane_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
   }
   
 #ifdef DEBUG_FIT
-  printf("PLANE coefficients: %.3lf %.3lf %.3lf %.3lf\n", 
+  printf("PLANE coefficients: %.5lf %.5lf %.5lf %.5lf\n", 
 	 coefficients.values[0],
 	 coefficients.values[1],
 	 coefficients.values[2],
@@ -300,6 +492,136 @@ bool robust_plane_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
 
     for (i = 0; i < inliers->indices.size(); i++) {
       cloud_inliers.points[inliers->indices[i]] = cloud.points[inliers->indices[i]];
+      cloud_outliers.points[inliers->indices[i]] = badP;
+    }
+  }
+
+  return true;
+}
+
+//----------------------------------------------------------------------------
+
+// use RANSAC to find PLANAR fit to point cloud
+
+bool robust_circle2d_fit(pcl::PointCloud<pcl::PointXYZ> & cloud_2d,
+			 pcl::PointCloud<pcl::PointXYZ> & cloud_3d,
+			 pcl::PointCloud<pcl::PointXYZ> & cloud_inliers,
+			 pcl::PointCloud<pcl::PointXYZ> & cloud_outliers,
+			 pcl::ModelCoefficients & coefficients,
+			 double threshold,
+			 double radius_min, double radius_max,
+			 bool do_3d)
+{
+  int i;
+  pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
+
+  // Create the segmentation object
+  pcl::SACSegmentation<pcl::PointXYZ> seg;
+
+  // Optional
+  seg.setOptimizeCoefficients (true);
+
+  // Mandatory
+  seg.setModelType (pcl::SACMODEL_CIRCLE2D);
+  seg.setMethodType (pcl::SAC_RANSAC);
+  seg.setDistanceThreshold (threshold);
+  
+  seg.setRadiusLimits(radius_min, radius_max);
+ 
+  seg.setMaxIterations(1000);
+  //  seg.setProbability(0.99);
+
+  //  double val;
+  // seg.getSamplesMaxDist(val);
+
+#ifdef DEBUG_FIT
+  printf("max iters = %i, prob = %lf\n", seg.getMaxIterations(), seg.getProbability());
+#endif
+
+  seg.setInputCloud(cloud_2d.makeShared());
+  //  seg.segment (*inliers, *coefficients);
+  seg.segment (*inliers, coefficients);
+  
+  if (inliers->indices.size () == 0) {
+    PCL_ERROR ("Could not estimate a planar model for the given dataset.");
+    return false;
+  }
+  
+#ifdef DEBUG_FIT
+  printf("CIRCLE coefficients: %.5lf %.5lf %.5lf\n", 
+	 coefficients.values[0],
+	 coefficients.values[1],
+	 coefficients.values[2]);
+    
+  printf("Model inliers: %i\n", inliers->indices.size());
+#endif
+
+  // unorganized
+
+  if (cloud_2d.height == 1) {
+
+    // Create the filtering object
+
+    pcl::ExtractIndices<pcl::PointXYZ> extract;
+    
+    cloud_inliers.clear();
+    cloud_outliers.clear();
+    
+    // extract inliers
+
+    if (do_3d)
+      extract.setInputCloud(cloud_3d.makeShared());
+    else
+      extract.setInputCloud(cloud_2d.makeShared());
+
+    extract.setIndices(inliers);
+    extract.setNegative(false);
+    extract.filter(cloud_inliers);
+    
+    extract.setNegative (true);
+    extract.filter (cloud_outliers);
+    
+#ifdef DEBUG_FIT
+    printf("%i inliers, %i outliers\n", cloud_inliers.size(), cloud_outliers.size());
+#endif
+  }
+
+  // organized
+
+  else {
+
+    cloud_inliers.width = cloud_2d.width;
+    cloud_inliers.height = cloud_2d.height;
+    cloud_inliers.points.resize(cloud_2d.points.size());
+    cloud_inliers.is_dense = false;
+
+    cloud_outliers.width = cloud_2d.width;
+    cloud_outliers.height = cloud_2d.height;
+    cloud_outliers.points.resize(cloud_2d.points.size());
+    cloud_outliers.is_dense = false;
+
+    pcl::PointXYZ badP;
+    badP.x = numeric_limits<float>::quiet_NaN();
+    badP.y = numeric_limits<float>::quiet_NaN();
+    badP.z = numeric_limits<float>::quiet_NaN();
+
+    //    printf("inliers size %i\n", inliers->indices.size());
+
+    int i;
+
+    for (i = 0; i < cloud_2d.points.size(); i++) {
+      cloud_inliers.points[i] = badP;
+      if (do_3d)
+	cloud_outliers.points[i] = cloud_3d.points[i];
+      else
+	cloud_outliers.points[i] = cloud_2d.points[i];
+    }
+
+    for (i = 0; i < inliers->indices.size(); i++) {
+      if (do_3d)
+	cloud_inliers.points[inliers->indices[i]] = cloud_3d.points[inliers->indices[i]];
+      else
+	cloud_inliers.points[inliers->indices[i]] = cloud_2d.points[inliers->indices[i]];
       cloud_outliers.points[inliers->indices[i]] = badP;
     }
   }
@@ -569,10 +891,9 @@ tf::Quaternion shortest_rotation_quaternion(double a1, double b1, double c1,
 }
 
 //----------------------------------------------------------------------------
-
 // rotate AND translate to correct height given plane equation
-
 // http://www.gamedev.net/topic/429507-finding-the-quaternion-betwee-two-vectors/#entry3856228
+//----------------------------------------------------------------------------
 
 void transform_to_level(pcl::PointCloud<pcl::PointXYZ> & cloud_in, pcl::PointCloud<pcl::PointXYZ> & cloud_out, double a, double b, double c, double d)
 {
@@ -592,9 +913,45 @@ void transform_to_level(pcl::PointCloud<pcl::PointXYZ> & cloud_in, pcl::PointClo
 
 //----------------------------------------------------------------------------
 
+void reverse_transform_to_level(pcl::PointCloud<pcl::PointXYZ> & cloud_in, pcl::PointCloud<pcl::PointXYZ> & cloud_out, double a, double b, double c, double d)
+{
+  tf::Transform xform(shortest_rotation_quaternion(a, b, c, 0, 0, 1),
+		      tf::Vector3(0, 0, d));
+
+  pcl_ros::transformPointCloud(cloud_in, cloud_out, xform.inverse());
+}
+
+//----------------------------------------------------------------------------
+
+void reverse_transform_to_level(pcl::PointCloud<pcl::PointXYZ> & cloud_in, pcl::PointCloud<pcl::PointXYZ> & cloud_out, pcl::ModelCoefficients & plane_coefficients)
+{
+  reverse_transform_to_level(cloud_in, cloud_out, 
+		     plane_coefficients.values[0], plane_coefficients.values[1], plane_coefficients.values[2], plane_coefficients.values[3]);
+}
+
+//----------------------------------------------------------------------------
+
+void transform_to_level(pcl::PointCloud<pcl::PointXYZI> & cloud_in, pcl::PointCloud<pcl::PointXYZI> & cloud_out, double a, double b, double c, double d)
+{
+  tf::Transform xform(shortest_rotation_quaternion(a, b, c, 0, 0, 1),
+		      tf::Vector3(0, 0, d));
+
+  pcl_ros::transformPointCloud(cloud_in, cloud_out, xform);
+}
+
+//----------------------------------------------------------------------------
+
+void transform_to_level(pcl::PointCloud<pcl::PointXYZI> & cloud_in, pcl::PointCloud<pcl::PointXYZI> & cloud_out, pcl::ModelCoefficients & plane_coefficients)
+{
+  transform_to_level(cloud_in, cloud_out, 
+		     plane_coefficients.values[0], plane_coefficients.values[1], plane_coefficients.values[2], plane_coefficients.values[3]);
+}
+
+//----------------------------------------------------------------------------
+
 // use RANSAC to find CIRCLE  fit to point cloud
 
-bool robust_circle_fit(pcl::PointCloud<pcl::PointXYZ> & cloud,
+bool robust_circle_fit_with_normals(pcl::PointCloud<pcl::PointXYZ> & cloud,
 			 pcl::PointCloud<pcl::PointXYZ> & cloud_inliers,
 			 pcl::PointCloud<pcl::PointXYZ> & cloud_outliers,
 			 pcl::ModelCoefficients & coefficients,

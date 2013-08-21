@@ -98,6 +98,16 @@ using namespace pcl;
 
 //----------------------------------------------------------------------------
 
+#define VEHICLE_STATE_DIMENSIONS  5
+
+#define VEHICLE_LENGTH            0     // meters
+#define VEHICLE_WIDTH             1     // meters
+#define VEHICLE_X                 2     // meters
+#define VEHICLE_Y                 3     // meters
+#define VEHICLE_THETA             4     // radians
+
+//----------------------------------------------------------------------------
+
 void plane_slice(pcl::PointCloud<pcl::PointXYZ> &,
 		 pcl::PointCloud<pcl::PointXYZ> &,
 		 pcl::PointCloud<pcl::PointXYZ> &,
@@ -109,6 +119,14 @@ bool robust_plane_fit(pcl::PointCloud<pcl::PointXYZ> &,
 		      pcl::PointCloud<pcl::PointXYZ> &,
 		      pcl::ModelCoefficients &,
 		      double);
+
+bool robust_circle2d_fit(pcl::PointCloud<pcl::PointXYZ> &,
+			 pcl::PointCloud<pcl::PointXYZ> &,
+			 pcl::PointCloud<pcl::PointXYZ> &,
+			 pcl::PointCloud<pcl::PointXYZ> &,
+			 pcl::ModelCoefficients &,
+			 double, double, double,
+			 bool);
 
 void cylinder_slice(pcl::PointCloud<pcl::PointXYZ> &,
 		    pcl::PointCloud<pcl::PointXYZ> &,
@@ -185,9 +203,23 @@ bool sift_registration (
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr,
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr );
 
+void transform_to_level(pcl::PointCloud<pcl::PointXYZI> &, pcl::PointCloud<pcl::PointXYZI> &, pcl::ModelCoefficients &);
+void transform_to_level(pcl::PointCloud<pcl::PointXYZI> &, pcl::PointCloud<pcl::PointXYZI> &, double, double, double, double);
+
 void transform_to_level(pcl::PointCloud<pcl::PointXYZ> &, pcl::PointCloud<pcl::PointXYZ> &, pcl::ModelCoefficients &);
 void transform_to_level(pcl::PointCloud<pcl::PointXYZ> &, pcl::PointCloud<pcl::PointXYZ> &, double, double, double, double);
+
+void reverse_transform_to_level(pcl::PointCloud<pcl::PointXYZ> &, pcl::PointCloud<pcl::PointXYZ> &, pcl::ModelCoefficients &);
+void reverse_transform_to_level(pcl::PointCloud<pcl::PointXYZ> &, pcl::PointCloud<pcl::PointXYZ> &, double, double, double, double);
+
 tf::Quaternion shortest_rotation_quaternion(double, double, double, double, double, double);
+void load_point_cloud(char *filename, pcl::PointCloud<pcl::PointXYZ> &, double);
+void load_xyzi_point_cloud(char *filename, pcl::PointCloud<pcl::PointXYZI> &, double);
+void copy_xyzi_to_point_cloud(pcl::PointCloud<pcl::PointXYZI> &, pcl::PointCloud<pcl::PointXYZ> &);
+void rectify_vehicle_point_cloud(pcl::PointCloud<pcl::PointXYZ> &, pcl::PointCloud<pcl::PointXYZ> &, vector <double> &);
+double icp_align_point_clouds(pcl::PointCloud<pcl::PointXYZ>::Ptr, pcl::PointCloud<pcl::PointXYZ>::Ptr,
+			      pcl::PointCloud<pcl::PointXYZ> &,  Eigen::Matrix4f &, int = 100);
+bool estimate_rigid_transform(pcl::PointCloud<pcl::PointXYZ> &, pcl::PointCloud<pcl::PointXYZ> &, Eigen::Matrix4f &);
 
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
