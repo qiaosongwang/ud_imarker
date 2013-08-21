@@ -1243,6 +1243,27 @@ Eigen::Matrix4f final_transform (
 
 //----------------------------------------------------------------------------
 
+//Downsample the pointcloud, and use voxel points as keypoints
+
+pcl::PointCloud<pcl::PointXYZI>::Ptr voxel_keypoints(
+	pcl::PointCloud<pcl::PointXYZRGB>::Ptr input,
+	pcl::PointCloud<pcl::PointXYZI>::Ptr keypoints, 
+	double leafSize
+        )
+{
+
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::VoxelGrid<pcl::PointXYZRGB> sor;
+    sor.setInputCloud (input);
+    sor.setLeafSize (leafSize,leafSize,leafSize);
+    sor.filter (*cloud_filtered);
+    pcl::copyPointCloud(*cloud_filtered,*keypoints);
+    
+    return keypoints;
+}
+
+//----------------------------------------------------------------------------
+
 //3D SIFT keypoint based registration, use SIFT keypoints to obtain initial transformation matrix,
 //Then use ICP for precise alignment, can be used for fast registration (much faster than ICP
 //or recognition using pre-defined CAT models as source pointcloud
@@ -1307,6 +1328,37 @@ bool sift_registration (
 	 //pcl::io::savePCDFileBinary("./registered.pcd",*registered);
    return true;
 }
+
+//----------------------------------------------------------------------------
+
+//Registration using ICP only
+bool  icp_registration (
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr source ,
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr target,
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr registered
+        )
+{
+
+    pcl::PointCloud<pcl::PointXYZI>::Ptr source_keypoints (new pcl::PointCloud<pcl::PointXYZI> ());
+    pcl::PointCloud<pcl::PointXYZI>::Ptr target_keypoints (new pcl::PointCloud<pcl::PointXYZI> ());
+
+    voxel_keypoints (source, source_keypoints, 4);
+    voxel_keypoints(target, target_keypoints, 4);
+      
+
+    //ICP based registration (see final_transform)
+    Eigen::Matrix4f final_transformation_matrix = final_transform (source_keypoints, target_keypoints);
+    pcl::transformPointCloud(*source, *registered, final_transformation_matrix);
+
+
+       change_color(*source, 255, 0, 0);
+      change_color(*target, 0, 0, 255);
+       change_color(*registered,0, 255, 0);
+
+      return true;
+   
+}
+
 
 
 //----------------------------------------------------------------------------
