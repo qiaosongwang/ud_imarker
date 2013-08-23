@@ -4,7 +4,7 @@ project(ud_imarker)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS roscpp rospy tf interactive_markers pcl pcl_ros geometry_msgs sensor_msgs std_msgs message_generation)
+find_package(catkin REQUIRED COMPONENTS roscpp rospy tf interactive_markers pcl pcl_ros geometry_msgs sensor_msgs std_msgs shape_msgs message_generation)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -51,7 +51,7 @@ generate_messages(
 catkin_package(
    INCLUDE_DIRS include
 #  LIBRARIES using_markers
-   CATKIN_DEPENDS rospy roscpp tf interactive_markers pcl pcl_ros geometry_msgs sensor_msgs std_msgs message_runtime
+   CATKIN_DEPENDS rospy roscpp tf interactive_markers pcl pcl_ros geometry_msgs sensor_msgs std_msgs message_runtime 
   DEPENDS system_lib
 )
 

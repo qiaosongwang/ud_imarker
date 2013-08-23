@@ -7,6 +7,7 @@
 
 #include "ud_imarker.hh"
 #include "ud_measurement_panel/MeasurementCommand.h"
+#include "ud_cursor/UDCursor.h"
 
 //----------------------------------------------------------------------------
 
@@ -146,6 +147,8 @@ Eigen::Vector4f maxPoint;
 //ros::Publisher rough_cylinder_marker_pub;
 ros::Publisher cylinder_marker_pub;
 
+ros::Publisher plane_pub;
+
 ros::Publisher marker_pub;
 ros::Publisher marker_array_pub;
 
@@ -155,6 +158,7 @@ ros::Publisher inliers_cloud_pub;
 ros::Publisher outliers_cloud_pub;
 
 ros::NodeHandle *nhp;
+ros::Subscriber cursor_sub;
 ros::Subscriber click_sub;
 ros::Subscriber ptcloud_sub;
 ros::Subscriber measurement_sub;
@@ -175,10 +179,13 @@ geometry_msgs::Point pp; //previous point
 vector <pcl::PointXYZ> ud_cursor_pts;
 double ud_cursor_pt_radius = 0.025;
 double ud_cursor_pt_line_width = 0.01;
-int ud_cursor_pt_selection_index = -1;
+int ud_cursor_pt_selection_index = NONE_SELECTED;
+
 bool ud_cursor_pt_display_indices = false;
 bool ud_cursor_pt_display_connections = false;
-bool ud_cursor_pt_do_move = false;
+//bool ud_cursor_pt_do_move = false;
+
+//int ud_cursor_edit_mode;
 
 //Declare received pointcloud from RVIZ
 pcl::PointCloud< pcl::PointXYZRGB> rviz_pt;
@@ -740,6 +747,9 @@ void makeMenuMarker( std::string name )
 
 void DeleteSelected()
 {
+  printf("IM menus deprecated\n"); fflush(stdout);
+
+  /*
   if (ud_cursor_pt_selection_index >= 0 && ud_cursor_pt_selection_index < ud_cursor_pts.size()) {
     
     ud_cursor_pts.erase(ud_cursor_pts.begin() + ud_cursor_pt_selection_index);
@@ -765,6 +775,8 @@ void DeleteSelected()
   }
 
   //  ROS_INFO("The delete last sub-menu has been found.");
+
+  */
 }
 
 void DeleteSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
@@ -778,6 +790,9 @@ void DeleteSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstP
 
 void DeleteAll()
 {
+  printf("IM menus deprecated\n"); fflush(stdout);
+
+  /*
   ud_cursor_pts.clear();
 
   ud_cursor_pt_selection_index = -1;
@@ -792,6 +807,7 @@ void DeleteAll()
   send_ud_cursor_point_markers();
 
   //  ROS_INFO("The delete all sub-menu has been found.");
+  */
 }
 
 void DeleteAllCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
@@ -1193,6 +1209,14 @@ void EstimatePlane(double prism_distance_threshold, bool do_publish)
     outlier_cloud_pub.publish(*rough_outlier_cloudptr);
     */
 
+      shape_msgs::Plane plane_msg;
+      plane_msg.coef[0] = plane_coefficients_ptr->values[0];
+      plane_msg.coef[1] = plane_coefficients_ptr->values[1];
+      plane_msg.coef[2] = plane_coefficients_ptr->values[2];
+      plane_msg.coef[3] = plane_coefficients_ptr->values[3];
+
+      plane_pub.publish(plane_msg);
+
     //    printf("d\n"); fflush(stdout);
     }
 
@@ -1378,6 +1402,9 @@ void UndoCropCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &fe
 
 void MoveSelected()
 {
+  printf("IM menus deprecated\n"); fflush(stdout);
+
+  /*
   //  MenuHandler::EntryHandle handle = feedback->menu_entry_id;
   MenuHandler::CheckState state;
   //  menu_handler.getCheckState( handle, state );
@@ -1401,7 +1428,7 @@ void MoveSelected()
   server->applyChanges();
 
   send_ud_cursor_point_markers();
-
+  */
 }
 
 void MoveSelectedCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
@@ -1475,10 +1502,12 @@ void initMenu()
 
   h_move_entry = menu_handler.insert( "Move selected point", &MoveSelectedCb );
 
+  /*
   if (ud_cursor_pt_do_move)
     menu_handler.setCheckState( h_move_entry, MenuHandler::CHECKED );
   else
     menu_handler.setCheckState( h_move_entry, MenuHandler::UNCHECKED );
+  */
 
   // DELETION
 
@@ -1966,15 +1995,155 @@ bool check_selected(pcl::PointXYZ P, int & index)
 
 // this gets called when a new ud_cursor point comes in
 
+void cursorCallback(const ud_cursor::UDCursor& msg)
+{
+  pcl::PointXYZ P;
+
+  P.x = msg.x;
+  P.y = msg.y;
+  P.z = msg.z;
+
+  if (msg.DisplayIndices) {
+
+    ud_cursor_pt_display_indices = !ud_cursor_pt_display_indices;
+
+  }
+
+  else if (msg.DisplayConnections) {
+
+    ud_cursor_pt_display_connections = !ud_cursor_pt_display_connections;
+
+  }
+
+
+  // MOVE mode : currently selected point goes where this message says
+
+  else if (msg.EditMode == UD_CURSOR_EDIT_MODE_MOVE) {
+
+    if (ud_cursor_pt_selection_index != NONE_SELECTED) {
+
+      printf("Moving\n");
+
+      ud_cursor_pts[ud_cursor_pt_selection_index] = P;
+
+    }
+
+  }
+
+  // DELETE selected point
+
+  else if (msg.EditMode == UD_CURSOR_EDIT_MODE_DELETE) {
+
+    if (check_selected(P, ud_cursor_pt_selection_index)) {
+
+      printf("Deleting\n");
+
+      if (ud_cursor_pt_selection_index >= 0 && ud_cursor_pt_selection_index < ud_cursor_pts.size()) {
+    
+	ud_cursor_pts.erase(ud_cursor_pts.begin() + ud_cursor_pt_selection_index);
+
+	// make new selected point one after the one we just deleted.  if that one was the last, make 
+	// new last the selected point
+
+	if (ud_cursor_pt_selection_index >= ud_cursor_pts.size())
+	  ud_cursor_pt_selection_index--;
+    
+	if (ud_cursor_pts.size() == 0) 
+	  ud_cursor_pt_selection_index = NONE_SELECTED;
+
+      }
+    }
+  }
+
+  // DELETE ALL points
+
+  else if (msg.EditMode == UD_CURSOR_EDIT_MODE_DELETE_ALL) {
+
+    printf("Deleting all\n");
+
+    ud_cursor_pts.clear();
+
+    ud_cursor_pt_selection_index = NONE_SELECTED;
+
+  }
+
+  // ADD point (which can also mean select)
+
+  else {
+
+    // ADD
+
+    if (!check_selected(P, ud_cursor_pt_selection_index)) {
+
+      printf("Adding\n");
+      
+      //    ud_cursor_pts.push_back(P);
+      ud_cursor_pt_selection_index++;
+      ud_cursor_pts.insert(ud_cursor_pts.begin() + ud_cursor_pt_selection_index, P);
+      
+      // last point added is automatically selected
+      
+      //    ud_cursor_pt_selection_index = ud_cursor_pts.size() - 1;
+
+      if (ud_cursor_pt_selection_index == 0) {
+
+	geometry_msgs::Pose pose;
+ 
+	pose.position.x = P.x + 5.0*ud_cursor_pt_radius;
+	pose.position.y = P.y + 5.0*ud_cursor_pt_radius;
+	pose.position.z = P.z + 5.0*ud_cursor_pt_radius;
+
+	server->setPose( "marker1", pose );
+	server->applyChanges();
+
+      }
+    }
+
+    // SELECT -- don't do anything because it already happened in check_selected()
+
+    else {
+      //    printf("selected %i!\n", ud_cursor_pt_selection_index);
+    }
+  }
+
+  //  printf("add: %i points\n", ud_cursor_pts.size());
+
+  send_ud_cursor_point_markers();
+
+}
+
+//----------------------------------------------------------------------------
+
+// this gets called when a new ud_cursor point comes in
+
+// note that the edit_mode has been written into header.seq
+
 void clickCallback(const geometry_msgs::PointStamped& msg)
 {
+  printf("clickCallback() deprecated\n");
+
+
+  /*
+
+  // hack of the day club...you're welcome
+  ud_cursor_edit_mode = msg.header.seq;
+  
+  if (ud_cursor_edit_mode == UD_CURSOR_EDIT_MODE_ADD) 
+    printf("A\n");
+  else if (ud_cursor_edit_mode == UD_CURSOR_EDIT_MODE_MOVE) 
+    printf("M\n");
+  else if (ud_cursor_edit_mode == UD_CURSOR_EDIT_MODE_DELETE) 
+    printf("D\n");
+
+
   pcl::PointXYZ P;
 
   P.x = msg.point.x;
   P.y = msg.point.y;
   P.z = msg.point.z;
 
-  if (ud_cursor_pt_do_move) {
+  //  if (ud_cursor_pt_do_move) {
+  if (ud_cursor_edit_mode == UD_CURSOR_EDIT_MODE_MOVE) {
 
     ud_cursor_pts[ud_cursor_pt_selection_index] = P;
 
@@ -2011,7 +2180,7 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
   //  printf("add: %i points\n", ud_cursor_pts.size());
 
   send_ud_cursor_point_markers();
-
+  */
 }
 
 //----------------------------------------------------------------------------
@@ -2025,6 +2194,7 @@ void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
 
   // commands -- only one should be true
 
+  /*
   if (msg.MoveSelected == 1) {
     MoveSelected();
     return;
@@ -2037,7 +2207,8 @@ void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
     DeleteSelected();
     return;
   }
-  else if (msg.EstimatePlane == 1) {
+  */
+  if (msg.EstimatePlane == 1) {
     EstimatePlane(measurement_msg.PlanePrismDistance, true);
     return;
   }
@@ -2076,6 +2247,8 @@ void initialize_ros()
 {
   // Publishers
 
+  plane_pub = nhp->advertise<shape_msgs::Plane>("reference_plane", 10);
+
   marker_pub = nhp->advertise<visualization_msgs::Marker>("visualization_marker", 10);
   marker_array_pub = nhp->advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 10);
 
@@ -2091,6 +2264,8 @@ void initialize_ros()
   outlier_cloud_pub = nhp->advertise<pcl::PointCloud<pcl::PointXYZ> > ("ud_outliers", 1);
 
   // Subscribers
+
+  cursor_sub = nhp->subscribe("ud_cursor_point", 10, cursorCallback);
 
   click_sub = nhp->subscribe("ud_clicked_point", 10, clickCallback);
 

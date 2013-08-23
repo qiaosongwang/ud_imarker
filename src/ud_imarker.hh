@@ -10,6 +10,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/PointStamped.h>
+#include <shape_msgs/Plane.h>
 
 #include <pcl/common/pca.h>
 
@@ -95,6 +96,21 @@ using namespace std;
 using namespace visualization_msgs;
 using namespace interactive_markers;
 using namespace pcl;
+
+//----------------------------------------------------------------------------
+
+#define NONE_SELECTED  -1
+
+// too much trouble to get #include "ud_cursor_tool.h" to actually work...f@#!ing catkin...
+
+#ifndef UD_CURSOR_EDIT_MODE_ADD
+
+#define UD_CURSOR_EDIT_MODE_ADD         0
+#define UD_CURSOR_EDIT_MODE_MOVE        1
+#define UD_CURSOR_EDIT_MODE_DELETE      2
+#define UD_CURSOR_EDIT_MODE_DELETE_ALL  3
+
+#endif
 
 //----------------------------------------------------------------------------
 
