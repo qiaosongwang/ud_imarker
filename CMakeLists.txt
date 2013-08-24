@@ -20,11 +20,10 @@ find_package(catkin REQUIRED COMPONENTS roscpp rospy tf interactive_markers pcl 
 #######################################
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+ add_message_files(
+  FILES
+  UDMeasurement.msg
+ )
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -36,6 +35,7 @@ find_package(catkin REQUIRED COMPONENTS roscpp rospy tf interactive_markers pcl 
 ## Generate added messages and services with any dependencies listed here
 generate_messages(
   DEPENDENCIES
+  std_msgs
   visualization_msgs
   geometry_msgs
 )

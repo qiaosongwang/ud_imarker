@@ -6,14 +6,16 @@
 //----------------------------------------------------------------------------
 
 #include "ud_imarker.hh"
-#include "ud_measurement_panel/MeasurementCommand.h"
-#include "ud_cursor/UDCursor.h"
 
 //----------------------------------------------------------------------------
 
 // this is where all of the magic numbers are set
 
-ud_measurement_panel::MeasurementCommand measurement_msg;
+ud_measurement_panel::MeasurementCommand measurement_command_msg;
+
+// this is what we send out to other nodes with our results
+
+ud_imarker::UDMeasurement measurement_msg;
 
 // rosrun pcl_ros pcd_to_pointcloud golfcart_pillar1_hokuyo.pcd 1
 // rosrun pcl_ros pcd_to_pointcloud path1_vehicle_only_KINFU.pcd 1
@@ -147,7 +149,8 @@ Eigen::Vector4f maxPoint;
 //ros::Publisher rough_cylinder_marker_pub;
 ros::Publisher cylinder_marker_pub;
 
-ros::Publisher plane_pub;
+//ros::Publisher plane_pub;
+ros::Publisher measurement_pub;
 
 ros::Publisher marker_pub;
 ros::Publisher marker_array_pub;
@@ -161,7 +164,7 @@ ros::NodeHandle *nhp;
 ros::Subscriber cursor_sub;
 ros::Subscriber click_sub;
 ros::Subscriber ptcloud_sub;
-ros::Subscriber measurement_sub;
+ros::Subscriber measurement_command_sub;
 
 float cpdist=0; //Current frame
 float globalscale = 1;  //What are the units on this? -Brad
@@ -198,6 +201,7 @@ pcl::PointCloud< pcl::PointXYZRGB> rviz_pt_filtered;
 
 void load_armory_golfcart_hokuyo_pcd()
 {
+  ground_plane_coefficients_ptr->values.resize(4);
   ground_plane_coefficients_ptr->values[0] = -0.00572;
   ground_plane_coefficients_ptr->values[1] =  0.03041;
   ground_plane_coefficients_ptr->values[2] =  0.99952;
@@ -243,6 +247,7 @@ void load_armory_valves1_hokuyo_pcd()
 
 void load_tepra_DS_asus_pcd()
 {
+  ground_plane_coefficients_ptr->values.resize(4);
   ground_plane_coefficients_ptr->values[0] = -0.03658;
   ground_plane_coefficients_ptr->values[1] =  0.71868;
   ground_plane_coefficients_ptr->values[2] = -0.69438; 
@@ -261,6 +266,7 @@ void load_tepra_DS_asus_pcd()
 
 void load_tepra_PS_asus_pcd()
 {
+  ground_plane_coefficients_ptr->values.resize(4);
   ground_plane_coefficients_ptr->values[0] = -0.03001;
   ground_plane_coefficients_ptr->values[1] =  0.84770;
   ground_plane_coefficients_ptr->values[2] = -0.52963;
@@ -389,10 +395,10 @@ void initialize_pcl()
   hull_cloudptr.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
   plane_coefficients_ptr.reset(new pcl::ModelCoefficients);
+
   circle_coefficients_ptr.reset(new pcl::ModelCoefficients);
 
   ground_plane_coefficients_ptr.reset(new pcl::ModelCoefficients);
-  ground_plane_coefficients_ptr->values.resize(4);
 
   load_scene_pcd();
 
@@ -817,31 +823,114 @@ void DeleteAllCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &f
 
 //----------------------------------------------------------------------------
 
+double mean_distance_to_plane(pcl::PointCloud<pcl::PointXYZ> & cloud,
+			      pcl::ModelCoefficients & plane_coeffs)
+{
+  double total_dist = 0.0;
+  
+  for (int i = 0; i < cloud.points.size(); i++) {
+    total_dist += 
+      fabs(cloud[i].x * plane_coeffs.values[0] +
+	   cloud[i].y * plane_coeffs.values[1] +
+	   cloud[i].z * plane_coeffs.values[2] +
+	   plane_coeffs.values[3]);
+  }
+
+  return total_dist / (double) cloud.points.size();
+}
+
+//----------------------------------------------------------------------------
+
+// treat all ud_cursor points as polyline and calculated its total length
+
+void MeasureDistanceToPlane() 
+{
+  // need at least one point
+
+  if (ud_cursor_pts.size() < 1) {
+    measurement_msg.Category = MEASUREMENT_TYPE_ERROR;
+    measurement_msg.ErrorMessage = "Need at least 1 pt";
+    measurement_pub.publish(measurement_msg);
+    return;
+  }
+
+  cursor_cloudptr->points.clear();
+
+  for (int i = 0; i < ud_cursor_pts.size(); i++)
+    cursor_cloudptr->points.push_back(ud_cursor_pts[i]);
+
+  // measure to last fit plane if there is one
+  
+  if (plane_coefficients_ptr->values.size()) {
+    
+    measurement_msg.Category = MEASUREMENT_TYPE_DISTANCE;
+    measurement_msg.Value[0] = mean_distance_to_plane(*cursor_cloudptr,
+						      *plane_coefficients_ptr);
+    measurement_pub.publish(measurement_msg);
+    
+  }
+    
+  // else if there is a default ground plane use it
+  
+  else if (ground_plane_coefficients_ptr->values.size()) {
+    
+    measurement_msg.Category = MEASUREMENT_TYPE_DISTANCE;
+    measurement_msg.Value[0] = mean_distance_to_plane(*cursor_cloudptr,
+						      *ground_plane_coefficients_ptr);
+    measurement_pub.publish(measurement_msg);
+    
+  }
+
+  // no plane!  badness...
+
+  else {
+    measurement_msg.Category = MEASUREMENT_TYPE_ERROR;
+    measurement_msg.ErrorMessage = "No plane defined";
+    measurement_pub.publish(measurement_msg);
+  }
+
+
+}
+
+//----------------------------------------------------------------------------
+
 // treat all ud_cursor points as polyline and calculated its total length
 
 void MeasureLength() 
 {
   double dx, dy, dz;
   double total_length = 0.0;
-  
-  if (ud_cursor_pts.size() > 1) {
 
-    for (int i = 0; i < ud_cursor_pts.size() - 1; i++) {
+  // need at least two points
 
-      dx = ud_cursor_pts[i].x - ud_cursor_pts[i + 1].x;
-      dy = ud_cursor_pts[i].y - ud_cursor_pts[i + 1].y;
-      dz = ud_cursor_pts[i].z - ud_cursor_pts[i + 1].z;
-
-      total_length += sqrt(dx*dx + dy*dy + dz*dz); 
-    }
-
-    printf("Total length = %.3lf\n", total_length);
-
-    //    send_ud_cursor_point_markers();
-
+  if (ud_cursor_pts.size() < 2) {
+    measurement_msg.Category = MEASUREMENT_TYPE_ERROR;
+    measurement_msg.ErrorMessage = "Need at least 2 pts";
+    measurement_pub.publish(measurement_msg);
+    return;
   }
 
+  for (int i = 0; i < ud_cursor_pts.size() - 1; i++) {
+    
+    dx = ud_cursor_pts[i].x - ud_cursor_pts[i + 1].x;
+    dy = ud_cursor_pts[i].y - ud_cursor_pts[i + 1].y;
+    dz = ud_cursor_pts[i].z - ud_cursor_pts[i + 1].z;
+    
+    total_length += sqrt(dx*dx + dy*dy + dz*dz); 
+  }
+  
+  measurement_msg.Category = MEASUREMENT_TYPE_DISTANCE;
+  measurement_msg.Value[0] = total_length;
+
+  measurement_pub.publish(measurement_msg);
+  
+  printf("Total length = %.3lf\n", total_length);
+  
+  //    send_ud_cursor_point_markers();
+
 }
+
+//----------------------------------------------------------------------------
 
 void MeasureLengthCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
@@ -883,7 +972,7 @@ void MeasureLengthCb( const visualization_msgs::InteractiveMarkerFeedbackConstPt
 
 
   // get radius estimate from PCA on inliers?  still slightly biased by outliers, but must be better
-  // than using constant measurement_msg.LineMaxDistance, right?  --provided true radius is <= measurement_msg.LineMaxDistance
+  // than using constant measurement_command_msg.LineMaxDistance, right?  --provided true radius is <= measurement_command_msg.LineMaxDistance
 
   /*
   pcl::PCA<pcl::PointXYZ> pca;
@@ -939,96 +1028,114 @@ void EstimateLine()
 {
   int i;
 
-  cursor_cloudptr->points.clear();
+  if (ud_cursor_pts.size() < 2) {
+    measurement_msg.Category = MEASUREMENT_TYPE_ERROR;
+    measurement_msg.ErrorMessage = "Line needs at least 2 pts";
+    measurement_pub.publish(measurement_msg);
+    return;
+  }
 
+  cursor_cloudptr->points.clear();
+  
   for (i = 0; i < ud_cursor_pts.size(); i++)
     cursor_cloudptr->points.push_back(ud_cursor_pts[i]);
-
+  
   // get a rough line as our starting point
-
+  
   robust_line_fit(*cursor_cloudptr,
 		  *inlier_cloudptr,
 		  *outlier_cloudptr,
 		  rough_line_coefficients,
-		  measurement_msg.CursorMaxDistance);
-
+		  measurement_command_msg.CursorMaxDistance);
+  
   // use its endpoints and a max radius to crop input point cloud to cylindrical volume of interest (VOI)
-
+  
   double min_xp, max_xp;
   //  compute_line_limits(cursor_cloudptr, line_coefficients, min_xp, max_xp);
   compute_line_limits(inlier_cloudptr, rough_line_coefficients, min_xp, max_xp);
-
+  
   cylinder_slice(*input_cloudptr,
 		 *rough_inlier_cloudptr,
 		 *rough_outlier_cloudptr,
 		 rough_line_coefficients,
-		 measurement_msg.LineRoughMaxDistance,
+		 measurement_command_msg.LineRoughMaxDistance,
 		 min_xp, max_xp);
-
+  
   // fit again to get finer estimate
-
+  
   robust_line_fit(*rough_inlier_cloudptr,
 		  *inlier_cloudptr,
 		  *outlier_cloudptr,
 		  line_coefficients,
-		  measurement_msg.LineMaxDistance);
-
+		  measurement_command_msg.LineMaxDistance);
+  
   compute_line_limits(inlier_cloudptr, line_coefficients, min_xp, max_xp);
-
+  
   //    pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
-
+  
   double mean_radius = mean_pointcloud_distance_to_3D_line(inlier_cloudptr, line_coefficients);
-
-  printf("estimated radius = %lf\n", mean_radius);
-
+  
+  //  printf("estimated radius = %lf\n", mean_radius);
+  
   /*
-  robust_cylinder_fit(*inlier_cloudptr,
-		      *rough_inlier_cloudptr,
-		      *rough_outlier_cloudptr,
-		      cylinder_coefficients,
-		      0.01, measurement_msg.LineMaxDistance); // measurement_msg.CircleMaxDistance);
+    robust_cylinder_fit(*inlier_cloudptr,
+    *rough_inlier_cloudptr,
+    *rough_outlier_cloudptr,
+    cylinder_coefficients,
+    0.01, measurement_command_msg.LineMaxDistance); // measurement_command_msg.CircleMaxDistance);
   */
-
-
+  
+  
   send_line_cylinder_marker(line_coefficients,
-		       mean_radius, // measurement_msg.LineMaxDistance,
-		       min_xp, max_xp,
-		       1.0, 0.0, 0.0, 0.5);
-
+			    mean_radius, // measurement_command_msg.LineMaxDistance,
+			    min_xp, max_xp,
+			    1.0, 0.0, 0.0, 0.5);
+  
+  measurement_msg.Category = MEASUREMENT_TYPE_LINE;
+  measurement_msg.Value[0] = line_coefficients.values[0];
+  measurement_msg.Value[1] = line_coefficients.values[1];
+  measurement_msg.Value[2] = line_coefficients.values[2];
+  measurement_msg.Value[3] = line_coefficients.values[3];
+  measurement_msg.Value[4] = line_coefficients.values[4];
+  measurement_msg.Value[5] = line_coefficients.values[5];
+  measurement_msg.Value[6] = mean_radius;
+  
+  measurement_pub.publish(measurement_msg);
+    
   inlier_cloudptr->header.frame_id = "base_link";
   inlier_cloud_pub.publish(*inlier_cloudptr);
-
+  
   outlier_cloudptr->header.frame_id = "base_link";
   outlier_cloud_pub.publish(*outlier_cloudptr);
-
+  
   //  rough_cylinder_marker_pub.publish();
-
+  
   /*
-  inlier_cloudptr->header.frame_id = "base_link";
-  inlier_cloud_pub.publish(*inlier_cloudptr);
-
-  outlier_cloudptr->header.frame_id = "base_link";
-  outlier_cloud_pub.publish(*outlier_cloudptr);
+    inlier_cloudptr->header.frame_id = "base_link";
+    inlier_cloud_pub.publish(*inlier_cloudptr);
+    
+    outlier_cloudptr->header.frame_id = "base_link";
+    outlier_cloud_pub.publish(*outlier_cloudptr);
   */
-
+  
   // now more exactly get the parameters of a cylindrical cluster within the VOI
-
+  
   /*
-  robust_cylinder_fit(*rough_inlier_cloudptr,
-		      *inlier_cloudptr,
-		      *outlier_cloudptr,
-		      cylinder_coefficients,
-		      measurement_msg.CircleMaxDistance);
-
-  inlier_cloudptr->header.frame_id = "base_link";
-  inlier_cloud_pub.publish(*inlier_cloudptr);
-
-  outlier_cloudptr->header.frame_id = "base_link";
-  outlier_cloud_pub.publish(*outlier_cloudptr);
+    robust_cylinder_fit(*rough_inlier_cloudptr,
+    *inlier_cloudptr,
+    *outlier_cloudptr,
+    cylinder_coefficients,
+    measurement_command_msg.CircleMaxDistance);
+    
+    inlier_cloudptr->header.frame_id = "base_link";
+    inlier_cloud_pub.publish(*inlier_cloudptr);
+    
+    outlier_cloudptr->header.frame_id = "base_link";
+    outlier_cloud_pub.publish(*outlier_cloudptr);
   */
-
-
 }
+
+//----------------------------------------------------------------------------
 
 // parametrize (if n = 2) or fit (n >= 3) LINE to all ud_cursor points
 
@@ -1046,6 +1153,13 @@ void EstimatePlane(double prism_distance_threshold, bool do_publish)
 {
   int i;
 
+  if (ud_cursor_pts.size() < 3) {
+    measurement_msg.Category = MEASUREMENT_TYPE_ERROR;
+    measurement_msg.ErrorMessage = "Plane needs at least 3 pts";
+    measurement_pub.publish(measurement_msg);
+    return;
+  }
+
   //  bool fit_twice = true; // false;
   //  double hull_scale_factor = 2.0;
 
@@ -1060,7 +1174,7 @@ void EstimatePlane(double prism_distance_threshold, bool do_publish)
 		   *inlier_cloudptr,
 		   *outlier_cloudptr,
 		   *plane_coefficients_ptr,
-		   measurement_msg.CursorMaxDistance);
+		   measurement_command_msg.CursorMaxDistance);
 
   // now convex hull + proximity to plane forms polygonal prism to roughly clip the data 
 
@@ -1087,16 +1201,16 @@ void EstimatePlane(double prism_distance_threshold, bool do_publish)
   P_mean.z /= (double) hull_cloudptr->points.size();
   
   for (i = 0; i < hull_cloudptr->points.size(); i++) {
-    hull_cloudptr->points[i].x = P_mean.x + measurement_msg.PlaneHullScaleFactor * (hull_cloudptr->points[i].x - P_mean.x);
-    hull_cloudptr->points[i].y = P_mean.y + measurement_msg.PlaneHullScaleFactor * (hull_cloudptr->points[i].y - P_mean.y);
-    hull_cloudptr->points[i].z = P_mean.z + measurement_msg.PlaneHullScaleFactor * (hull_cloudptr->points[i].z - P_mean.z);
+    hull_cloudptr->points[i].x = P_mean.x + measurement_command_msg.PlaneHullScaleFactor * (hull_cloudptr->points[i].x - P_mean.x);
+    hull_cloudptr->points[i].y = P_mean.y + measurement_command_msg.PlaneHullScaleFactor * (hull_cloudptr->points[i].y - P_mean.y);
+    hull_cloudptr->points[i].z = P_mean.z + measurement_command_msg.PlaneHullScaleFactor * (hull_cloudptr->points[i].z - P_mean.z);
   }
 
   pcl::ExtractPolygonalPrismData<pcl::PointXYZ> prism;
   prism.setInputCloud (input_cloudptr);
   prism.setInputPlanarHull (hull_cloudptr);
   prism.setHeightLimits (-prism_distance_threshold, prism_distance_threshold);
-  //  prism.setHeightLimits (-measurement_msg.PlanePrismDistance, measurement_msg.PlanePrismDistance);
+  //  prism.setHeightLimits (-measurement_command_msg.PlanePrismDistance, measurement_command_msg.PlanePrismDistance);
   pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
 
   // do the clip on entire point cloud
@@ -1120,12 +1234,12 @@ void EstimatePlane(double prism_distance_threshold, bool do_publish)
 
   // proximity to original plane was loose, and there weren't that many cursor points, so fit again 
 
-  if (measurement_msg.PlaneFitTwice)
+  if (measurement_command_msg.PlaneFitTwice)
     robust_plane_fit(*rough_inlier_cloudptr,
 		     *inlier_cloudptr,
 		     *outlier_cloudptr,
 		     *plane_coefficients_ptr,
-		     measurement_msg.PlaneMaxDistance);
+		     measurement_command_msg.PlaneMaxDistance);
   
   //  printf("fine plane: %i in, %i out\n", inlier_cloudptr->points.size(), outlier_cloudptr->points.size()); fflush(stdout);
 
@@ -1133,11 +1247,11 @@ void EstimatePlane(double prism_distance_threshold, bool do_publish)
 
   // ...just points inside convex hull
 
-  if (measurement_msg.PlaneHullCrop) {
+  if (measurement_command_msg.PlaneHullCrop) {
 
     if (do_publish) {
 
-      if (measurement_msg.PlaneFitTwice) {
+      if (measurement_command_msg.PlaneFitTwice) {
       
 	pcl::toROSMsg(*inlier_cloudptr, inlier_cloud_msg);
 	inlier_cloud_msg.header.frame_id = "base_link";
@@ -1174,12 +1288,12 @@ void EstimatePlane(double prism_distance_threshold, bool do_publish)
 
     //    printf("a\n"); fflush(stdout);
 
-    if (measurement_msg.PlaneFitTwice)
+    if (measurement_command_msg.PlaneFitTwice)
       plane_slice(*input_cloudptr,
 		  *rough_inlier_cloudptr,
 		  *rough_outlier_cloudptr,
 		  *plane_coefficients_ptr,
-		  measurement_msg.PlaneMaxDistance);
+		  measurement_command_msg.PlaneMaxDistance);
 
     if (do_publish) {
 
@@ -1209,6 +1323,7 @@ void EstimatePlane(double prism_distance_threshold, bool do_publish)
     outlier_cloud_pub.publish(*rough_outlier_cloudptr);
     */
 
+      /*
       shape_msgs::Plane plane_msg;
       plane_msg.coef[0] = plane_coefficients_ptr->values[0];
       plane_msg.coef[1] = plane_coefficients_ptr->values[1];
@@ -1216,6 +1331,15 @@ void EstimatePlane(double prism_distance_threshold, bool do_publish)
       plane_msg.coef[3] = plane_coefficients_ptr->values[3];
 
       plane_pub.publish(plane_msg);
+      */
+
+      measurement_msg.Category = MEASUREMENT_TYPE_PLANE;
+      measurement_msg.Value[0] = plane_coefficients_ptr->values[0];
+      measurement_msg.Value[1] = plane_coefficients_ptr->values[1];
+      measurement_msg.Value[2] = plane_coefficients_ptr->values[2];
+      measurement_msg.Value[3] = plane_coefficients_ptr->values[3];
+
+      measurement_pub.publish(measurement_msg);
 
     //    printf("d\n"); fflush(stdout);
     }
@@ -1227,7 +1351,7 @@ void EstimatePlane(double prism_distance_threshold, bool do_publish)
 
 void EstimatePlaneCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-  EstimatePlane(measurement_msg.PlanePrismDistance, true);
+  EstimatePlane(measurement_command_msg.PlanePrismDistance, true);
 }
 
 //----------------------------------------------------------------------------
@@ -1259,7 +1383,7 @@ void EstimateCircle()
 		      *outlier_cloudptr,
 		      *circle_coefficients_ptr,
 		      0.02,
-		      measurement_msg.CircleMinRadius, measurement_msg.CircleMaxRadius,
+		      measurement_command_msg.CircleMinRadius, measurement_command_msg.CircleMaxRadius,
 		      true);
   
   /*
@@ -1292,6 +1416,18 @@ void EstimateCircle()
   level_inlier_cloudptr->points[0].y = circle_coefficients_ptr->values[1];
   level_inlier_cloudptr->points[0].z = 0.0;
   reverse_transform_to_level(*level_inlier_cloudptr, *temp_cloudptr, *plane_coefficients_ptr);
+  
+  measurement_msg.Category = MEASUREMENT_TYPE_CIRCLE;
+  measurement_msg.Value[0] = plane_coefficients_ptr->values[0];
+  measurement_msg.Value[1] = plane_coefficients_ptr->values[1];
+  measurement_msg.Value[2] = plane_coefficients_ptr->values[2];
+  measurement_msg.Value[3] = plane_coefficients_ptr->values[3];
+  measurement_msg.Value[4] = temp_cloudptr->points[0].x;
+  measurement_msg.Value[5] = temp_cloudptr->points[0].y;
+  measurement_msg.Value[6] = temp_cloudptr->points[0].z;
+  measurement_msg.Value[7] = circle_coefficients_ptr->values[2];
+
+  measurement_pub.publish(measurement_msg);
 
   send_circle_cylinder_marker(temp_cloudptr->points[0].x, temp_cloudptr->points[0].y, temp_cloudptr->points[0].z,
 			      *plane_coefficients_ptr,
@@ -2188,28 +2324,14 @@ void clickCallback(const geometry_msgs::PointStamped& msg)
 
 void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
 {
-  measurement_msg = msg;
+  measurement_command_msg = msg;
 
   // parameters
 
   // commands -- only one should be true
 
-  /*
-  if (msg.MoveSelected == 1) {
-    MoveSelected();
-    return;
-  }
-  else if (msg.DeleteAll == 1) {
-    DeleteAll();
-    return;
-  }
-  else if (msg.DeleteSelected == 1) {
-    DeleteSelected();
-    return;
-  }
-  */
   if (msg.EstimatePlane == 1) {
-    EstimatePlane(measurement_msg.PlanePrismDistance, true);
+    EstimatePlane(measurement_command_msg.PlanePrismDistance, true);
     return;
   }
   else if (msg.EstimateLine == 1) {
@@ -2226,6 +2348,10 @@ void panelCallback(const ud_measurement_panel::MeasurementCommand& msg)
   }
   else if (msg.MeasureLength == 1) {
     MeasureLength();
+    return;
+  }
+  else if (msg.MeasureDistanceToPlane == 1) {
+    MeasureDistanceToPlane();
     return;
   }
   else if (msg.Crop == 1) {
@@ -2247,7 +2373,8 @@ void initialize_ros()
 {
   // Publishers
 
-  plane_pub = nhp->advertise<shape_msgs::Plane>("reference_plane", 10);
+  //  plane_pub = nhp->advertise<shape_msgs::Plane>("reference_plane", 10);
+  measurement_pub = nhp->advertise<ud_imarker::UDMeasurement>("ud_measurement", 10);
 
   marker_pub = nhp->advertise<visualization_msgs::Marker>("visualization_marker", 10);
   marker_array_pub = nhp->advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 10);
@@ -2272,7 +2399,7 @@ void initialize_ros()
   ptcloud_sub = nhp->subscribe("cloud_pcd", 10, ptcloudCallback);
   
   //add a subscriber to listen for things that are clicked on in the measurement panel
-  measurement_sub = nhp->subscribe("measurement_command", 10, panelCallback);
+  measurement_command_sub = nhp->subscribe("measurement_command", 10, panelCallback);
 
 }
 

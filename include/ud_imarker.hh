@@ -5,12 +5,15 @@
 //----------------------------------------------------------------------------
 
 #include <ros/ros.h>
+
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/PointStamped.h>
 #include <shape_msgs/Plane.h>
+
+#include "ud_imarker/UDMeasurement.h"
 
 #include <pcl/common/pca.h>
 
@@ -85,6 +88,9 @@
 #include <vector>
 #include <math.h>
 
+#include "ud_measurement_panel/MeasurementCommand.h"
+#include "ud_cursor/UDCursor.h"
+
 //----------------------------------------------------------------------------
 
 typedef pcl::PointXYZRGBA PointT;
@@ -99,7 +105,20 @@ using namespace pcl;
 
 //----------------------------------------------------------------------------
 
+// editing
+
 #define NONE_SELECTED  -1
+
+//----------------------------------------------------------------------------
+
+#define MEASUREMENT_TYPE_DISTANCE    0
+#define MEASUREMENT_TYPE_PLANE       1
+#define MEASUREMENT_TYPE_LINE        2
+#define MEASUREMENT_TYPE_CIRCLE      3
+#define MEASUREMENT_TYPE_TRANSFORM   4
+#define MEASUREMENT_TYPE_ERROR       5
+
+//----------------------------------------------------------------------------
 
 // too much trouble to get #include "ud_cursor_tool.h" to actually work...f@#!ing catkin...
 
